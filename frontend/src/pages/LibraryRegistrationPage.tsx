@@ -1,27 +1,46 @@
-import React, { useState } from 'react';
+import React, { useState, ChangeEvent, FormEvent } from 'react';
 import BookGallery from "../components/catalog/BookGallery";
 
-const LibraryRegistrationPage = () => {
-  const [formData, setFormData] = useState({
+
+interface FormData {
+  fullName: string;
+  email: string;
+  cne: string;
+  password: string;
+  confirmPassword: string;
+}
+
+interface FormErrors {
+  fullName?: string;
+  email?: string;
+  cne?: string;
+  password?: string;
+  confirmPassword?: string;
+  terms?: string;
+}
+
+const LibraryRegistrationPage: React.FC = () => {
+  const [formData, setFormData] = useState<FormData>({
     fullName: '',
     email: '',
     cne: '',
     password: '',
     confirmPassword: ''
   });
-  const [errors, setErrors] = useState({});
-  const [agreeTerms, setAgreeTerms] = useState(false);
+  
+  const [errors, setErrors] = useState<FormErrors>({});
+  const [agreeTerms, setAgreeTerms] = useState<boolean>(false);
 
-  const handleChange = (e) => {
+  const handleChange = (e: ChangeEvent<HTMLInputElement>): void => {
     const { name, value } = e.target;
-    setFormData({
-      ...formData,
+    setFormData(prev => ({
+      ...prev,
       [name]: value
-    });
+    }));
   };
 
-  const validateForm = () => {
-    const newErrors = {};
+  const validateForm = (): boolean => {
+    const newErrors: FormErrors = {};
     
     if (!formData.fullName.trim()) newErrors.fullName = 'Full name is required';
     
@@ -55,7 +74,7 @@ const LibraryRegistrationPage = () => {
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = (e: FormEvent<HTMLFormElement>): void => {
     e.preventDefault();
     if (validateForm()) {
       console.log('Registration data:', formData);
@@ -157,7 +176,7 @@ const LibraryRegistrationPage = () => {
                 type="checkbox"
                 className="h-4 w-4 text-blue-600 mt-1"
                 checked={agreeTerms}
-                onChange={(e) => setAgreeTerms(e.target.checked)}
+                onChange={(e: ChangeEvent<HTMLInputElement>) => setAgreeTerms(e.target.checked)}
               />
               <label htmlFor="terms" className="ml-2 block text-sm text-gray-400">
                 I accept the <a href="#" className="text-blue-400 hover:underline">Terms of Service</a> and <a href="#" className="text-blue-400 hover:underline">Privacy Policy</a>
@@ -179,22 +198,6 @@ const LibraryRegistrationPage = () => {
         </div>
       </div>
       
-      {/* Right panel with book covers */}
-      {/* <div className="hidden md:block md:w-3/5 bg-gray-100 relative overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-r from-gray-800 to-transparent z-10"></div>
-        <div className="grid grid-cols-3 gap-4 p-8 h-full overflow-hidden">
-          {[...Array(12)].map((_, index) => (
-            <div key={index} className="relative h-64 transform hover:scale-105 transition duration-300" style={{ transform: `rotate(${Math.random() * 8 - 4}deg)` }}>
-              <div className="absolute inset-0 bg-gradient-to-b from-transparent to-gray-900 opacity-30 rounded-lg z-10"></div>
-              <img 
-                src={`https://placehold.co/200x${300 + index * 10}`}
-                alt="Book cover"
-                className="w-full h-full object-cover rounded-lg shadow-lg"
-              />
-            </div>
-          ))}
-        </div>
-      </div> */}
       <BookGallery />
     </div>
   );
