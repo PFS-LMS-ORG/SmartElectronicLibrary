@@ -36,19 +36,18 @@ const BookGallery: React.FC = () => {
   
       {/* Dynamic Grid Layout with Varying Column and Row Spans */}
       <div className="grid grid-cols-4 gap-6 auto-rows-[200px] relative z-20">
-        {books.map((book, index) => {
+        {books.map((book) => {
           // Randomly set column and row spans for variety
-          const colSpan = Math.random() > 0.5 ? 1 : 2;  // Random column span between 1 and 2
-          const rowSpan = Math.random() > 0.5 ? 1 : 2;  // Random row span between 1 and 2
+          const colSpan = Math.random() > 0.5 ? 1 : 2;
+          const rowSpan = Math.random() > 0.5 ? 1 : 2;
   
           return (
             <div
               key={book.id}
-              className={`relative rounded-lg overflow-hidden transition-transform duration-300 transform group hover:scale-105 shadow-lg`}
+              className={`relative rounded-lg overflow-hidden shadow-lg`}
               style={{
                 gridColumn: `span ${colSpan}`,
                 gridRow: `span ${rowSpan}`,
-                transform: `rotate(${Math.random() * 4 - 2}deg)`
               }}
             >
               {/* Dark Overlay */}
