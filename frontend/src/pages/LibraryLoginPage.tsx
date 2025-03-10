@@ -1,25 +1,39 @@
-import React, { useState } from 'react';
+import React, { useState, ChangeEvent, FormEvent } from 'react';
 import BookGallery from "../components/catalog/BookGallery";
 
-const LibraryLoginPage = () => {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [errors, setErrors] = useState({});
 
-  const validateForm = () => {
-    const newErrors = {};
+interface FormErrors {
+  email?: string;
+  password?: string;
+}
+
+const LibraryLoginPage: React.FC = () => {
+  const [email, setEmail] = useState<string>('');
+  const [password, setPassword] = useState<string>('');
+  const [errors, setErrors] = useState<FormErrors>({});
+
+  const validateForm = (): boolean => {
+    const newErrors: FormErrors = {};
     if (!email) newErrors.email = 'Email is required';
     if (!password) newErrors.password = 'Password is required';
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = (e: FormEvent<HTMLFormElement>): void => {
     e.preventDefault();
     if (validateForm()) {
       console.log('Login attempt with:', { email, password });
       // Authentication logic here (Later)
     }
+  };
+
+  const handleEmailChange = (e: ChangeEvent<HTMLInputElement>): void => {
+    setEmail(e.target.value);
+  };
+
+  const handlePasswordChange = (e: ChangeEvent<HTMLInputElement>): void => {
+    setPassword(e.target.value);
   };
 
   return (
@@ -48,7 +62,7 @@ const LibraryLoginPage = () => {
                 placeholder="Email address"
                 className={`w-full bg-gray-800 text-white rounded p-3 focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.email ? 'border border-red-500' : ''}`}
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                onChange={handleEmailChange}
               />
               {errors.email && <p className="text-red-500 text-xs mt-1">{errors.email}</p>}
             </div>
@@ -61,7 +75,7 @@ const LibraryLoginPage = () => {
                 placeholder="Password"
                 className={`w-full bg-gray-800 text-white rounded p-3 focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.password ? 'border border-red-500' : ''}`}
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={handlePasswordChange}
               />
               {errors.password && <p className="text-red-500 text-xs mt-1">{errors.password}</p>}
             </div>
@@ -81,21 +95,6 @@ const LibraryLoginPage = () => {
       </div>
       
       {/* Right panel with book covers */}
-      {/* <div className="hidden md:block md:w-3/5 bg-gray-100 relative overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-r from-gray-800 to-transparent z-10"></div>
-        <div className="grid grid-cols-3 gap-4 p-8 h-full overflow-hidden">
-          {[...Array(12)].map((_, index) => (
-            <div key={index} className="relative h-64 transform hover:scale-105 transition duration-300" style={{ transform: `rotate(${Math.random() * 8 - 4}deg)` }}>
-              <div className="absolute inset-0 bg-gradient-to-b from-transparent to-gray-900 opacity-30 rounded-lg z-10"></div>
-              <img 
-                src={`https://placehold.co/200x${300 + index * 10}`}
-                alt="Book cover"
-                className="w-full h-full object-cover rounded-lg shadow-lg"
-              />
-            </div>
-          ))}
-        </div>
-      </div> */}
       <BookGallery />
     </div>
   );
