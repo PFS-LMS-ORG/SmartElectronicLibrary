@@ -1,5 +1,4 @@
 // pages/BookWiseHomepage.tsx
-import Navbar from './Navbar';
 import BackgroundWrapper from '@/components/ui/BackgroundWrapper';
 import BookCover from '@/components/ui/BookCover';
 import { Button } from '@/components/ui/button';
@@ -27,8 +26,7 @@ const BookWiseHomepage = () => {
 
   return (
     <BackgroundWrapper>
-      {/* Navbar */}
-      <Navbar />
+      
 
       {/* Main Content */}
 

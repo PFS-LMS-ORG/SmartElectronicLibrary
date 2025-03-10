@@ -1,7 +1,6 @@
 // SearchPage.jsx
 import React, { useState } from 'react';
 import { Search } from 'lucide-react';
-import Navbar from './Navbar';
 import BackgroundWrapper from '@/components/ui/BackgroundWrapper';
 import BookCover from '@/components/ui/BookCover';
 import { Button } from '@/components/ui/button';
@@ -40,8 +39,8 @@ const SearchPage = () => {
 
   return (
     <BackgroundWrapper>
-      <div className="min-h-screen bg-gray-900 bg-opacity-95 text-white">
-        <Navbar />
+      <div className="min-h-screen bg-opacity-95 text-white">
+        
         <main className="p-4 px-8 lg:px-16 pt-8 pb-16">
           {/* Header */}
           <div className="text-center mb-12">

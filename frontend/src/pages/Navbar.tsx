@@ -2,14 +2,14 @@ import { Book } from "lucide-react"
 
 const Navbar = () => {
   return (
-    <nav className="text-white flex items-center justify-between p-4 px-8 lg:px-16 border-b border-gray-800">
+    <nav className="text-white bg-transparent  flex items-center justify-between p-4 px-8 lg:px-16 border-b border-gray-800">
         <div className="flex items-center gap-2">
           <Book className="h-6 w-6 text-white" />
-          <span className="text-xl font-bold">BookWise</span>
+          <span className="text-xl font-bold">MyLibrary</span>
         </div>
         <div className="flex items-center gap-6">
-          <span className="text-yellow-100">Home</span>
-          <span>Search</span>
+          <span className="text-yellow-100"><a href="/">Home</a></span>
+          <span><a href="search">Search</a></span>
           <div className="flex items-center gap-2">
             <div className="bg-teal-500 rounded-full h-8 w-8 flex items-center justify-center text-white">
               AH
