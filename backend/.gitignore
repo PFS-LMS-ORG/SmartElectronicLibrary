@@ -1,0 +1,29 @@
+# .gitignore for backend (django)
+
+# Ignore the virtual environment
+venv/
+
+# Ignore the database
+db.sqlite3
+
+# Ignore the secret key
+.env
+
+# Ignore the static files
+staticfiles/
+
+# Ignore the media files
+media/
+
+# Ignore the logs
+logs/
+
+
+# Ignore the cache
+__pycache__/
+
+# Ignore the compiled python files
+*.pyc
+*.pyo
+*.pyd
+
