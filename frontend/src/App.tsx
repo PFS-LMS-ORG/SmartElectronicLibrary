@@ -6,6 +6,7 @@ import Navbar from "./pages/Navbar";
 import BackgroundWrapper from "./components/ui/BackgroundWrapper";
 import LibraryLoginPage from "./pages/LibraryLoginPage"
 import LibraryRegistrationPage from "./pages/LibraryRegistrationPage"
+import BookDetails from "./pages/BookDetails";
 
 function App() {
   return (
@@ -17,6 +18,7 @@ function App() {
       <Route path="/login" element={<LibraryLoginPage />} />
       <Route path="/register" element={<LibraryRegistrationPage />} />
       <Route path="/reservations" element={<Reservations />} />
+      <Route path="/book/:id" element={<BookDetails />} />
     </Routes>
     </BackgroundWrapper>
   );

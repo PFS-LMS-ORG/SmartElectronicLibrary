@@ -10,7 +10,7 @@ const BookGallery: React.FC = () => {
   const fetchBooks = async (query: string) => {
     try {
       const response = await fetch(
-        `https://www.googleapis.com/books/v1/volumes?q=${query}&maxResults=12`
+        `https://www.googleapis.com/books/v1/volumes?q=${query}&maxResults=16`
       );
       const data = await response.json();
       
@@ -30,25 +30,17 @@ const BookGallery: React.FC = () => {
 
 
   return (
-    <div className="hidden md:block md:w-3/5 bg-gray-100 relative overflow-hidden p-6">
+    <div className="hidden md:block md:w-3/5 bg-gray-100 relative overflow-hidden p-[-6]">
       {/* Gradient Overlay */}
       <div className="absolute inset-0 bg-gradient-to-r from-gray-800 to-transparent z-10"></div>
   
       {/* Dynamic Grid Layout with Varying Column and Row Spans */}
-      <div className="grid grid-cols-4 gap-6 auto-rows-[200px] relative z-20">
+      <div className="grid grid-cols-4 gap-4 auto-rows-[200px] relative z-20">
         {books.map((book) => {
-          // Randomly set column and row spans for variety
-          const colSpan = Math.random() > 0.5 ? 1 : 2;
-          const rowSpan = Math.random() > 0.5 ? 1 : 2;
-  
           return (
             <div
               key={book.id}
               className={`relative rounded-lg overflow-hidden shadow-lg`}
-              style={{
-                gridColumn: `span ${colSpan}`,
-                gridRow: `span ${rowSpan}`,
-              }}
             >
               {/* Dark Overlay */}
               <div className="absolute inset-0 bg-gradient-to-b from-transparent to-gray-900 opacity-30 group-hover:opacity-50 transition-opacity duration-300"></div>
