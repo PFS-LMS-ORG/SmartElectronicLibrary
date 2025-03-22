@@ -7,6 +7,7 @@ import BackgroundWrapper from "./components/ui/BackgroundWrapper";
 import LibraryLoginPage from "./pages/LibraryLoginPage"
 import LibraryRegistrationPage from "./pages/LibraryRegistrationPage"
 import BookDetails from "./pages/BookDetails";
+import Product from "./pages/Product";
 
 function App() {
   return (
@@ -19,6 +20,8 @@ function App() {
       <Route path="/register" element={<LibraryRegistrationPage />} />
       <Route path="/reservations" element={<Reservations />} />
       <Route path="/book/:id" element={<BookDetails />} />
+      <Route path="/product" element={<Product />} />
+      <Route path="*" element={<div>Page Not Found</div>} />
     </Routes>
     </BackgroundWrapper>
   );
