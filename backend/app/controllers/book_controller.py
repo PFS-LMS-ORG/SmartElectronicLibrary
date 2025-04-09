@@ -48,3 +48,12 @@ def get_featured_books():
 
     # Convert the books to a list of dictionaries and return as JSON response
     return jsonify(book[0].to_dict())
+
+@book_controller.route('/books/<int:book_id>', methods=['GET'])
+def get_book_by_id(book_id):
+    book = BookService.get_book_by_id(book_id)
+
+    if book:
+        return jsonify(book.to_dict())
+    else:
+        return jsonify({'error': 'Book not found'}), 404
