@@ -57,12 +57,12 @@ const BookDetails = () => {
         <div>
           <h1 className="text-4xl font-bold mb-2">{book.title}</h1>
           <h2 className="text-lg text-gray-300 mb-4">
-            By {book.authors.map((a) => a.name).join(", ")}
+            By {book.authors.toString()}
           </h2>
 
           <p className="text-sm text-gray-400 mb-4">
             <span className="font-semibold text-white">Categories:</span>{" "}
-            {book.categories.map((c) => c.name).join(", ")}
+            {book.categories.toString()}
           </p>
 
           <p className="text-sm text-gray-400 mb-2">
@@ -76,7 +76,7 @@ const BookDetails = () => {
           <p className="text-base leading-relaxed mb-6 text-gray-200">{book.description}</p>
 
           {book.summary && (
-            <div className="p-4 bg-gray-800 rounded-lg mb-6">
+            <div className="p-4 bg-gray-800 rounded-lg mb-6 h-auto">
               <h3 className="font-semibold text-lg mb-2">Summary</h3>
               <p className="text-sm text-gray-300">{book.summary}</p>
             </div>
