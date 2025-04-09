@@ -77,3 +77,13 @@ class BookService:
         """
         featured_book = Book.query.filter_by(featured_book=True).all()
         return featured_book
+
+    @staticmethod
+    def get_book_by_id(id):
+        """
+        Fetches a book by its ID.
+
+        :param id: ID of the book
+        :return: Book object or None
+        """
+        return Book.query.get(id)
