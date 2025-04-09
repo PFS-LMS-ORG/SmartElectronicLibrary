@@ -9,7 +9,7 @@ class Book(db.Model):
     cover_url = db.Column(db.String(255))
     description = db.Column(db.String(500)) 
     rating = db.Column(db.Float)  
-    summary = db.Column(db.String(1000))
+    summary = db.Column(db.Text)
     borrow_count = db.Column(db.Integer, default=0)  # Number of times the book has been borrowed 
     total_books = db.Column(db.Integer, default=0)  # Total number of copies of the book available
     available_books = db.Column(db.Integer, default=0)  # Number of copies currently available for borrowing
