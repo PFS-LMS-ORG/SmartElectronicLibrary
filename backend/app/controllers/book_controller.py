@@ -32,3 +32,19 @@ def get_categories():
 
     # Convert the categories to a list of dictionaries and return as JSON response
     return jsonify([category.to_dict() for category in categories])
+
+@book_controller.route('/books/popular', methods=['GET'])
+def get_popular_books():
+    # Call the BookService to fetch popular books
+    books = BookService.get_popular_books()
+
+    # Convert the books to a list of dictionaries and return as JSON response
+    return jsonify([book.to_dict() for book in books])
+
+@book_controller.route('/books/featured', methods=['GET'])
+def get_featured_books():
+    # Call the BookService to fetch featured books
+    book = BookService.get_featured_book()
+
+    # Convert the books to a list of dictionaries and return as JSON response
+    return jsonify(book[0].to_dict())
