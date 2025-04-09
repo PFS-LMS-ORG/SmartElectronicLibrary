@@ -2,6 +2,7 @@
 import BackgroundWrapper from '@/components/ui/BackgroundWrapper';
 import BookCover from '@/components/ui/BookCover';
 import { Button } from '@/components/ui/button';
+import { Link } from 'react-router-dom';
 
 const BookWiseHomepage = () => {
   const featuredBook = {
@@ -70,22 +71,18 @@ const BookWiseHomepage = () => {
         <section className="text-white">
           <h2 className="text-3xl font-bold mb-8">Popular Books</h2>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-6">
-            {popularBooks.map(book => (
-              <div key={book.id} className="flex flex-col">
-                {/* Book Cover */}
-                <div className="relative mb-4 h-60 group cursor-pointer">
-                  <img 
-                    src={book.coverImage} 
-                    alt={book.title} 
-                    className="rounded-lg shadow-lg h-60 object-cover relative z-10"
-                    style={{
-                      boxShadow: "0 10px 15px -3px rgba(0, 0, 0, 0.6), 0 4px 6px -2px rgba(0, 0, 0, 0.4)"
-                    }}
-                  />
-                </div>
-                <h3 className="font-bold">{book.title} - By {book.author}</h3>
-              </div>
-            ))}
+          {popularBooks.map(book => (
+            <div key={book.id} className="flex flex-col">
+            <Link to={`/book/${book.id}`} className="relative mb-4 h-60 group cursor-pointer">
+              <img 
+                src={book.coverImage} 
+                alt={book.title} 
+                className="rounded-lg shadow-lg h-60 object-cover relative z-10"
+              />
+            </Link>
+    <h3 className="font-bold">{book.title} - By {book.author}</h3>
+  </div>
+))}
           </div>
         </section>
       </main>
