@@ -9,7 +9,11 @@ class Book(db.Model):
     cover_url = db.Column(db.String(255))
     description = db.Column(db.String(500)) 
     rating = db.Column(db.Float)  
-    summary = db.Column(db.String(1000)) 
+    summary = db.Column(db.String(1000))
+    borrow_count = db.Column(db.Integer, default=0)  # Number of times the book has been borrowed 
+    total_books = db.Column(db.Integer, default=0)  # Total number of copies of the book available
+    available_books = db.Column(db.Integer, default=0)  # Number of copies currently available for borrowing
+    featured_book = db.Column(db.Boolean, default=False)  # Whether the book is featured or not
 
     authors = db.relationship(
         "Author",
@@ -37,5 +41,9 @@ class Book(db.Model):
             'rating': self.rating,
             'summary': self.summary,
             'authors': [author.name for author in self.authors],
-            'categories': [category.name for category in self.categories]
+            'categories': [category.name for category in self.categories],
+            'borrow_count': self.borrow_count,
+            'total_books': self.total_books,
+            'available_books': self.available_books,
+            'featured_book': self.featured_book
         }

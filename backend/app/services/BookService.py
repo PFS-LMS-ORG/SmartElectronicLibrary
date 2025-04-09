@@ -57,3 +57,23 @@ class BookService:
         """
         categories = Category.query.all()
         return categories
+    
+    @staticmethod
+    def get_popular_books():
+        """
+        Fetches the most popular books based on borrow count.
+
+        :return: List of popular books
+        """
+        popular_books = Book.query.order_by(Book.borrow_count.desc()).limit(6).all()
+        return popular_books
+    
+    @staticmethod
+    def get_featured_book():
+        """
+        Fetches the featured books.
+
+        :return: List of featured books
+        """
+        featured_book = Book.query.filter_by(featured_book=True).all()
+        return featured_book

@@ -40,7 +40,8 @@ with app.app_context():
         cover_url="https://image.tmdb.org/t/p/original/lglQFk4opJuoDregOssk0gS16Pg.jpg",
         description="The first book in the Harry Potter series, where Harry discovers his magical heritage.",
         rating=4.9,
-        summary="Harry Potter discovers he's a wizard and attends Hogwarts, where he uncovers mysteries surrounding his parents' death."
+        summary="Harry Potter discovers he's a wizard and attends Hogwarts, where he uncovers mysteries surrounding his parents' death.",
+        featured_book=True,
     )
     lotr = Book(
         title="The Lord of the Rings", 
