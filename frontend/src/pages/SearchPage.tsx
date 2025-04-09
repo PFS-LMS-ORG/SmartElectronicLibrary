@@ -110,7 +110,8 @@ const SearchPage = () => {
       <div key={book.id} className="flex flex-col">
         <div className="mb-3">
           <BookCover 
-            coverImage={book.cover_url} 
+            id={book.id}
+            cover_url={book.cover_url} 
             title={book.title}
             size="sm"
           />

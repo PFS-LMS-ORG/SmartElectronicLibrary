@@ -2,7 +2,6 @@
 import BackgroundWrapper from '@/components/ui/BackgroundWrapper';
 import BookCover from '@/components/ui/BookCover';
 import { Button } from '@/components/ui/button';
-import { Link } from 'react-router-dom';
 import { useState , useEffect } from 'react';
 
 
@@ -80,7 +79,7 @@ const BookWiseHomepage = () => {
           </div>
           
           {/* Featured Book Cover */}
-          <BookCover coverImage={featuredBook?.cover_url ?? ''} title={featuredBook?.title ?? 'Untitled'} />
+          <BookCover id={featuredBook?.id ?? 0} cover_url={featuredBook?.cover_url ?? ''} title={featuredBook?.title ?? 'Untitled'} />
         </section>
 
         {/* Popular Books Section */}
@@ -89,14 +88,16 @@ const BookWiseHomepage = () => {
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-6">
           {popularBooks.map(book => (
             <div key={book.id} className="flex flex-col">
-              <Link to={`/book/${book.id}`} className="relative mb-4 h-60 group cursor-pointer">
+              <div className="relative mb-6 h-60 group cursor-pointer">
               <BookCover 
-                coverImage={book.cover_url} 
+                id={book.id}
+                cover_url={book.cover_url} 
                 title={book.title}
                 size="sm"
               />
-              </Link>
+              </div>
               <h3 className="font-bold">{book.title} - By {book.authors.toString()}</h3>
+              <p className="text-xs text-gray-400">{book.categories.toString()}</p>
             </div>
 ))}
           </div>
