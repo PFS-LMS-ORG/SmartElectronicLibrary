@@ -3,6 +3,13 @@ from app.services.BookService import BookService
 
 book_controller = Blueprint('book_controller', __name__)
 
+
+
+@book_controller.route('/', methods=['GET'])
+def root():
+    return jsonify({"message": "Flask backend is running 🚀"})
+
+
 @book_controller.route('/books', methods=['GET'])
 def get_books():
     # Get the search query from the request
