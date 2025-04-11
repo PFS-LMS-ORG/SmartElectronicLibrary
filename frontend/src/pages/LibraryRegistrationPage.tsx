@@ -1,11 +1,11 @@
 import React, { useState, ChangeEvent, FormEvent } from 'react';
-import BookGallery from "../components/catalog/BookGallery";
-
+import { useNavigate } from 'react-router-dom';
+import BookGallery from '../components/catalog/BookGallery';
+import { register } from '../services/auth';
 
 interface FormData {
   fullName: string;
   email: string;
-  cne: string;
   password: string;
   confirmPassword: string;
 }
@@ -13,72 +13,73 @@ interface FormData {
 interface FormErrors {
   fullName?: string;
   email?: string;
-  cne?: string;
   password?: string;
   confirmPassword?: string;
   terms?: string;
+  server?: string;
 }
 
 const LibraryRegistrationPage: React.FC = () => {
   const [formData, setFormData] = useState<FormData>({
     fullName: '',
     email: '',
-    cne: '',
     password: '',
-    confirmPassword: ''
+    confirmPassword: '',
   });
-  
   const [errors, setErrors] = useState<FormErrors>({});
   const [agreeTerms, setAgreeTerms] = useState<boolean>(false);
+  const navigate = useNavigate();
 
   const handleChange = (e: ChangeEvent<HTMLInputElement>): void => {
     const { name, value } = e.target;
-    setFormData(prev => ({
+    setFormData((prev) => ({
       ...prev,
-      [name]: value
+      [name]: value,
     }));
   };
 
   const validateForm = (): boolean => {
     const newErrors: FormErrors = {};
-    
+
     if (!formData.fullName.trim()) newErrors.fullName = 'Full name is required';
-    
+
     if (!formData.email.trim()) {
       newErrors.email = 'Email is required';
     } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
       newErrors.email = 'Email is invalid';
     }
-    
-    if (!formData.cne.trim()) {
-      newErrors.cne = 'CNE is required';
-    } else if (!/^[A-Z0-9]{10}$/i.test(formData.cne)) {
-      newErrors.cne = 'CNE must be 10 alphanumeric characters';
-    }
-    
+
     if (!formData.password) {
       newErrors.password = 'Password is required';
     } else if (formData.password.length < 6) {
       newErrors.password = 'Password must be at least 6 characters';
     }
-    
+
     if (formData.password !== formData.confirmPassword) {
       newErrors.confirmPassword = 'Passwords do not match';
     }
-    
+
     if (!agreeTerms) {
       newErrors.terms = 'You must agree to the terms';
     }
-    
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleSubmit = (e: FormEvent<HTMLFormElement>): void => {
+  const handleSubmit = async (e: FormEvent<HTMLFormElement>): Promise<void> => {
     e.preventDefault();
     if (validateForm()) {
-      console.log('Registration data:', formData);
-      // Registration logic here (Later)
+      try {
+        await register({
+          name: formData.fullName,
+          email: formData.email,
+          password: formData.password,
+        });
+        navigate('/login'); // Redirect to login after successful registration
+      } catch (error: any) {
+        setErrors({ server: error.response?.data?.message || 'Registration failed' });
+      }
     }
   };
 
@@ -96,10 +97,11 @@ const LibraryRegistrationPage: React.FC = () => {
               <h1 className="text-2xl font-bold">LMSENSA+</h1>
             </div>
             <h2 className="text-xl font-medium mt-4 mb-1">Create Your Library Account</h2>
-            <p className="text-gray-400 text-sm">Please complete all fields below and use a valid university ID to access our online library services</p>
+            <p className="text-gray-400 text-sm">Please complete all fields below to access our online library services</p>
           </div>
-          
+
           <form onSubmit={handleSubmit} className="space-y-4">
+            {errors.server && <p className="text-red-500 text-sm">{errors.server}</p>}
             <div>
               <label htmlFor="fullName" className="sr-only">Full Name</label>
               <input
@@ -113,7 +115,7 @@ const LibraryRegistrationPage: React.FC = () => {
               />
               {errors.fullName && <p className="text-red-500 text-xs mt-1">{errors.fullName}</p>}
             </div>
-            
+
             <div>
               <label htmlFor="email" className="sr-only">Email address</label>
               <input
@@ -127,7 +129,7 @@ const LibraryRegistrationPage: React.FC = () => {
               />
               {errors.email && <p className="text-red-500 text-xs mt-1">{errors.email}</p>}
             </div>
-            
+
             <div>
               <label htmlFor="password" className="sr-only">Password</label>
               <input
@@ -141,7 +143,7 @@ const LibraryRegistrationPage: React.FC = () => {
               />
               {errors.password && <p className="text-red-500 text-xs mt-1">{errors.password}</p>}
             </div>
-            
+
             <div>
               <label htmlFor="confirmPassword" className="sr-only">Confirm Password</label>
               <input
@@ -155,7 +157,7 @@ const LibraryRegistrationPage: React.FC = () => {
               />
               {errors.confirmPassword && <p className="text-red-500 text-xs mt-1">{errors.confirmPassword}</p>}
             </div>
-            
+
             <div className="flex items-start">
               <input
                 id="terms"
@@ -169,21 +171,21 @@ const LibraryRegistrationPage: React.FC = () => {
               </label>
             </div>
             {errors.terms && <p className="text-red-500 text-xs">{errors.terms}</p>}
-            
+
             <button
               type="submit"
               className="w-full bg-amber-500 hover:bg-amber-600 text-gray-900 font-medium py-3 px-4 rounded transition duration-300"
             >
               Create Account
             </button>
-            
+
             <div className="text-center text-gray-400 text-sm">
               <a href="/login" className="hover:text-blue-400 transition duration-300">Already have an account? Login</a>
             </div>
           </form>
         </div>
       </div>
-      
+
       <BookGallery />
     </div>
   );
