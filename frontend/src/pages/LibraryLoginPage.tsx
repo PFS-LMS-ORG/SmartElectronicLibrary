@@ -1,16 +1,20 @@
 import React, { useState, ChangeEvent, FormEvent } from 'react';
-import BookGallery from "../components/catalog/BookGallery";
-
+import { useNavigate } from 'react-router-dom';
+import BookGallery from '../components/catalog/BookGallery';
+import { useAuth } from '../context/AuthContext';
 
 interface FormErrors {
   email?: string;
   password?: string;
+  server?: string;
 }
 
 const LibraryLoginPage: React.FC = () => {
   const [email, setEmail] = useState<string>('');
   const [password, setPassword] = useState<string>('');
   const [errors, setErrors] = useState<FormErrors>({});
+  const { login } = useAuth();
+  const navigate = useNavigate();
 
   const validateForm = (): boolean => {
     const newErrors: FormErrors = {};
@@ -20,11 +24,15 @@ const LibraryLoginPage: React.FC = () => {
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleSubmit = (e: FormEvent<HTMLFormElement>): void => {
+  const handleSubmit = async (e: FormEvent<HTMLFormElement>): Promise<void> => {
     e.preventDefault();
     if (validateForm()) {
-      console.log('Login attempt with:', { email, password });
-      // Authentication logic here (Later)
+      try {
+        await login(email, password);
+        navigate('/'); // Redirect to home after successful login
+      } catch (error: any) {
+        setErrors({ server: error.response?.data?.message || 'Login failed' });
+      }
     }
   };
 
@@ -52,8 +60,9 @@ const LibraryLoginPage: React.FC = () => {
             <h2 className="text-xl font-medium mt-6 mb-2">Welcome back to LMSENSA+</h2>
             <p className="text-gray-400 text-sm">Access the vast collection of books that will inspire you</p>
           </div>
-          
+
           <form onSubmit={handleSubmit} className="space-y-6">
+            {errors.server && <p className="text-red-500 text-sm">{errors.server}</p>}
             <div>
               <label htmlFor="email" className="sr-only">Email address</label>
               <input
@@ -66,7 +75,7 @@ const LibraryLoginPage: React.FC = () => {
               />
               {errors.email && <p className="text-red-500 text-xs mt-1">{errors.email}</p>}
             </div>
-            
+
             <div>
               <label htmlFor="password" className="sr-only">Password</label>
               <input
@@ -79,22 +88,21 @@ const LibraryLoginPage: React.FC = () => {
               />
               {errors.password && <p className="text-red-500 text-xs mt-1">{errors.password}</p>}
             </div>
-            
+
             <button
               type="submit"
               className="w-full bg-amber-500 hover:bg-amber-600 text-gray-900 font-medium py-3 px-4 rounded transition duration-300"
             >
               Login
             </button>
-            
+
             <div className="text-center text-gray-400 text-sm">
               <a href="/register" className="hover:text-blue-400 transition duration-300">Don't have an account? Register here</a>
             </div>
           </form>
         </div>
       </div>
-      
-      {/* Right panel with book covers */}
+
       <BookGallery />
     </div>
   );
