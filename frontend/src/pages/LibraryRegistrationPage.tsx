@@ -115,26 +115,12 @@ const LibraryRegistrationPage: React.FC = () => {
             </div>
             
             <div>
-              <label htmlFor="cne" className="sr-only">CNE (Code National Etudiant)</label>
-              <input
-                id="cne"
-                name="cne"
-                type="text"
-                placeholder="CNE (e.g L123456789)"
-                className={`w-full bg-gray-800 text-white rounded p-3 focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.cne ? 'border border-red-500' : ''}`}
-                value={formData.cne}
-                onChange={handleChange}
-              />
-              {errors.cne && <p className="text-red-500 text-xs mt-1">{errors.cne}</p>}
-            </div>
-            
-            <div>
               <label htmlFor="email" className="sr-only">Email address</label>
               <input
                 id="email"
                 name="email"
                 type="email"
-                placeholder="Email address (e.g f.lastName@uca.ac.ma)"
+                placeholder="Email address (e.g john.doe@example.com)"
                 className={`w-full bg-gray-800 text-white rounded p-3 focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.email ? 'border border-red-500' : ''}`}
                 value={formData.email}
                 onChange={handleChange}
