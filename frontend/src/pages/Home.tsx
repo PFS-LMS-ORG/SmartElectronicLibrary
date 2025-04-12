@@ -1,7 +1,10 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import axios from 'axios';
 import BackgroundWrapper from '@/components/ui/BackgroundWrapper';
 import BookCover from '@/components/ui/BookCover';
 import { Button } from '@/components/ui/button';
+import { useAuth } from '../context/AuthContext';
 
 interface Book {
   id: number;
@@ -10,8 +13,8 @@ interface Book {
   description: string;
   rating: number;
   summary: string;
-  authors: { name: string }[];
-  categories: { name: string }[];
+  authors: string[];
+  categories: string[];
   borrow_count: number;
   total_books: number;
   available_books: number;
@@ -20,63 +23,101 @@ interface Book {
 const Home = () => {
   const [featuredBook, setFeaturedBook] = useState<Book | null>(null);
   const [popularBooks, setPopularBooks] = useState<Book[]>([]);
+  const [isLoadingFeatured, setIsLoadingFeatured] = useState(true);
+  const [isLoadingPopular, setIsLoadingPopular] = useState(true);
+  const { isAuthenticated, isLoading: isAuthLoading } = useAuth();
+  const navigate = useNavigate();
 
   useEffect(() => {
+    console.log('Home useEffect: isAuthLoading=%s, isAuthenticated=%s', isAuthLoading, isAuthenticated);
+    if (isAuthLoading) {
+      console.log('Waiting for auth state to resolve');
+      return;
+    }
+
+    if (!isAuthenticated) {
+      console.log('User not authenticated, redirecting to login');
+      navigate('/login');
+      return;
+    }
+
     const fetchPopularBooks = async () => {
       try {
+        setIsLoadingPopular(true);
         const token = localStorage.getItem('token');
-        const response = await fetch('/api/books/popular', {
+        if (!token) {
+          throw new Error('No token found');
+        }
+        console.log('Fetching popular books with token:', token.slice(0, 20) + '...');
+        const response = await axios.get('/api/books/popular', {
           headers: {
             Authorization: `Bearer ${token}`,
           },
         });
-        if (!response.ok) {
-          throw new Error(`Failed to fetch popular books: ${response.status} ${response.statusText}`);
-        }
-        const data: Book[] = await response.json();
-        setPopularBooks(data);
-      } catch (error) {
-        console.error('Error fetching popular books:', error);
+        console.log('Popular books response:', response.data);
+        setPopularBooks(response.data || []);
+      } catch (error: any) {
+        console.error('Error fetching popular books:', error.response?.data || error.message);
+        setPopularBooks([]);
+      } finally {
+        setIsLoadingPopular(false);
       }
     };
 
     const fetchFeaturedBook = async () => {
       try {
+        setIsLoadingFeatured(true);
         const token = localStorage.getItem('token');
-        const response = await fetch('/api/books/featured', {
+        if (!token) {
+          throw new Error('No token found');
+        }
+        console.log('Fetching featured book with token:', token.slice(0, 20) + '...');
+        const response = await axios.get('/api/books/featured', {
           headers: {
             Authorization: `Bearer ${token}`,
           },
         });
-        if (!response.ok) {
-          throw new Error(`Failed to fetch featured book: ${response.status} ${response.statusText}`);
-        }
-        const data: Book = await response.json();
-        setFeaturedBook(data);
-      } catch (error) {
-        console.error('Error fetching featured book:', error);
+        console.log('Featured book response:', response.data);
+        setFeaturedBook(response.data || null);
+      } catch (error: any) {
+        console.error('Error fetching featured book:', error.response?.data || error.message);
+        setFeaturedBook(null);
+      } finally {
+        setIsLoadingFeatured(false);
       }
     };
 
     fetchFeaturedBook();
     fetchPopularBooks();
-  }, []);
+  }, [isAuthenticated, isAuthLoading, navigate]);
 
-
-  console.log(featuredBook);
+  if (isAuthLoading) {
+    console.log('Home rendering auth loading state');
+    return <div className="flex h-screen items-center justify-center bg-gray-100">Loading...</div>;
+  }
 
   return (
     <BackgroundWrapper>
       <main className="container mx-auto px-8 lg:px-16 py-8">
-        {/* Featured Book Section */}
         <section className="flex flex-col md:flex-row gap-10 mb-16 text-white">
           <div className="flex-1">
-            {featuredBook ? (
+            {isLoadingFeatured ? (
+              <div className="animate-pulse">
+                <div className="h-16 bg-gray-700 rounded w-3/4 mb-4"></div>
+                <div className="h-6 bg-gray-700 rounded w-1/2 mb-4"></div>
+                <div className="flex gap-6 mb-6">
+                  <div className="h-6 bg-gray-700 rounded w-24"></div>
+                  <div className="h-6 bg-gray-700 rounded w-24"></div>
+                </div>
+                <div className="h-24 bg-gray-700 rounded w-full mb-6"></div>
+                <div className="h-12 bg-gray-700 rounded w-48"></div>
+              </div>
+            ) : featuredBook ? (
               <>
                 <h1 className="text-6xl font-bold mb-4">{featuredBook.title}</h1>
                 <div className="mb-4">
-                  <span>By {featuredBook.authors.toString()}</span>
-                  <span className="mx-4">Category: {featuredBook.categories.toString()}</span>
+                  <span>By {featuredBook.authors.join(', ')}</span>
+                  <span className="mx-4">Category: {featuredBook.categories.join(', ')}</span>
                   <span className="flex items-center">
                     <svg
                       xmlns="http://www.w3.org/2000/svg"
@@ -84,7 +125,7 @@ const Home = () => {
                       viewBox="0 0 20 20"
                       fill="currentColor"
                     >
-                      <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                      <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3 .921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784 .57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81 .588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
                     </svg>
                     {featuredBook.rating}/5
                   </span>
@@ -114,38 +155,69 @@ const Home = () => {
                 </Button>
               </>
             ) : (
-              <p>Loading featured book...</p>
+              <p>No featured book available.</p>
             )}
           </div>
-          {featuredBook && (
-            <BookCover
-              id={featuredBook.id}
-              cover_url={featuredBook.cover_url}
-              title={featuredBook.title}
-            />
+          {isLoadingFeatured ? (
+            <div className="animate-pulse">
+              <div className="h-96 w-64 bg-gray-700 rounded"></div>
+            </div>
+          ) : (
+            featuredBook && (
+              <BookCover
+                id={featuredBook.id}
+                cover_url={featuredBook.cover_url}
+                title={featuredBook.title}
+              />
+            )
           )}
         </section>
 
-        {/* Popular Books Section */}
         <section className="text-white">
           <h2 className="text-3xl font-bold mb-8">Popular Books</h2>
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-6">
-            {popularBooks.length > 0 ? (
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+            {isLoadingPopular ? (
+              Array.from({ length: 6 }).map((_, index) => (
+                <div
+                  key={index}
+                  className="flex flex-col animate-pulse bg-gray-800 rounded-lg p-4 shadow-md"
+                >
+                  <div className="relative mb-4 h-60 bg-gray-700 rounded"></div>
+                  <div className="h-6 bg-gray-700 rounded w-3/4 mb-2"></div>
+                  <div className="h-4 bg-gray-700 rounded w-1/2 mb-2"></div>
+                  <div className="flex flex-wrap gap-2">
+                    <div className="h-5 bg-gray-700 rounded-full w-16"></div>
+                    <div className="h-5 bg-gray-700 rounded-full w-16"></div>
+                  </div>
+                </div>
+              ))
+            ) : popularBooks.length > 0 ? (
               popularBooks.map((book) => (
-                <div key={book.id} className="flex flex-col">
-                  <div className="relative mb-6 h-60 group cursor-pointer">
+                <div
+                  key={book.id}
+                  className="flex flex-col rounded-lg p-4 shadow-md hover:shadow-lg transition-shadow duration-300"
+                >
+                  <div className="relative mb-4 h-60 group cursor-pointer">
                     <BookCover id={book.id} cover_url={book.cover_url} title={book.title} size="sm" />
                   </div>
-                  <h3 className="font-bold">
-                    {book.title} - By {book.authors.toString()}
-                  </h3>
-                  <p className="text-xs text-gray-400">
-                    {book.categories.toString()}
+                  <h3 className="text-lg font-semibold text-white truncate">{book.title}</h3>
+                  <p className="text-sm text-gray-400 italic mb-2">
+                    By {book.authors.join(', ')}
                   </p>
+                  <div className="flex flex-wrap gap-2">
+                    {book.categories.map((category) => (
+                      <span
+                        key={category}
+                        className="inline-block bg-gray-700 text-gray-200 text-xs font-medium px-2.5 py-1 rounded-full"
+                      >
+                        {category}
+                      </span>
+                    ))}
+                  </div>
                 </div>
               ))
             ) : (
-              <p>Loading popular books...</p>
+              <p>No popular books available.</p>
             )}
           </div>
         </section>
