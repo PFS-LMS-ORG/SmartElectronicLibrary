@@ -174,7 +174,7 @@ const SearchPage = () => {
           </div>
 
           {/* Books Grid */}
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-6 mb-8">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-6 mb-8">
             {isLoading ? (
               Array.from({ length: 6 }).map((_, index) => (
                 <div key={index} className="flex flex-col animate-pulse">
@@ -186,22 +186,27 @@ const SearchPage = () => {
               ))
             ) : books.length > 0 ? (
               books.map((book) => (
-                <div key={book.id} className="flex flex-col">
+                <div
+                  key={book.id}
+                  className="flex flex-col rounded-lg p-4 shadow-md hover:shadow-lg transition-shadow duration-300"
+                >
                   <div className="relative mb-4 h-60 group cursor-pointer">
-                    <BookCover
-                      id={book.id}
-                      cover_url={book.cover_url}
-                      title={book.title}
-                      size="sm"
-                    />
+                    <BookCover id={book.id} cover_url={book.cover_url} title={book.title} size="sm" />
                   </div>
-                  <h3 className="text-sm font-semibold text-white truncate">{book.title}</h3>
-                  <p className="text-xs text-gray-300 uppercase tracking-wide mb-1">
+                  <h3 className="text-lg font-semibold text-white truncate">{book.title}</h3>
+                  <p className="text-sm text-gray-400 italic mb-2">
                     By {book.authors.join(', ')}
                   </p>
-                  <p className="text-xs text-gray-200 uppercase font-bold tracking-wide">
-                    {book.categories.join(' • ')}
-                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {book.categories.map((category) => (
+                      <span
+                        key={category}
+                        className="inline-block bg-gray-700 text-gray-200 text-xs font-medium px-2.5 py-1 rounded-full"
+                      >
+                        {category}
+                      </span>
+                    ))}
+                  </div>
                 </div>
               ))
             ) : (
