@@ -27,11 +27,12 @@ class RentalRequest(db.Model):
                 'id': self.user.id if self.user else None,
                 'name': self.user.name if self.user else None,
                 'email': self.user.email if self.user else None
-            } if self.user else None,  # Return user details if available
+            } if self.user else None,
             'book': {
                 'id': self.book.id if self.book else None,
                 'title': self.book.title if self.book else None,
-                'cover_url': self.book.cover_url if self.book else None
-            } if self.book else None  # Return book details if available
+                'cover_url': self.book.cover_url if self.book else None,
+                'authors': [author.name for author in self.book.authors] if self.book and self.book.authors else [],
+                'categories': [category.name for category in self.book.categories] if self.book and self.book.categories else []
+            } if self.book else None
         }
-

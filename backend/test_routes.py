@@ -16,6 +16,8 @@ def test_routes():
     print(f"Status Code: {response.status_code}")
     print(f"Response Data: {response.data.decode('utf-8')}\n")
 
+    
+
     # Test the '/books/categories' route
     print("Testing /books/categories route")
     response = client.get('/books/categories')

@@ -28,12 +28,12 @@ import {
     },
     {
       title: "All Users",
-      url: "/users",
+      url: "/admin/users",
       icon: Users, // 👤 Multiple users icon
     },
     {
       title: "All Books",
-      url: "/books",
+      url: "/admin/books",
       icon: Book, // 📚 Book icon
     },
     {

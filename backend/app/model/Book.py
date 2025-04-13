@@ -48,5 +48,5 @@ class Book(db.Model):
             'total_books': self.total_books,
             'available_books': self.available_books,
             'featured_book': self.featured_book,
-            'created_at': self.created_at.strftime('%Y-%m-%d %H:%M:%S')
+            'created_at': self.created_at.isoformat() if self.created_at else None
         }

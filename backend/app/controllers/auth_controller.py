@@ -1,0 +1,157 @@
+# # app/controllers/auth_controller.py
+# from flask import Blueprint, request, jsonify
+# from app.db import db
+# from app.model.User import User, bcrypt
+# from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity
+# from sqlalchemy.exc import IntegrityError
+
+# auth_bp = Blueprint('auth', __name__)
+
+# @auth_bp.route('/register', methods=['POST'])
+# def register():
+#     data = request.get_json()
+#     name = data.get('name')
+#     email = data.get('email')
+#     password = data.get('password')
+
+#     if not all([name, email, password]):
+#         return jsonify({'message': 'Missing required fields'}), 400
+
+#     # Check if email already exists
+#     if User.query.filter_by(email=email).first():
+#         return jsonify({'message': 'Email already registered'}), 400
+
+#     try:
+#         user = User(name=name, email=email)
+#         user.set_password(password)
+#         db.session.add(user)
+#         db.session.commit()
+#         return jsonify({'message': 'User registered successfully'}), 201
+#     except IntegrityError:
+#         db.session.rollback()
+#         return jsonify({'message': 'Registration failed'}), 400
+
+# @auth_bp.route('/login', methods=['POST'])
+# def login():
+#     data = request.get_json()
+#     email = data.get('email')
+#     password = data.get('password')
+
+#     user = User.query.filter_by(email=email).first()
+#     if user and user.check_password(password):
+#         access_token = create_access_token(identity=user.id)
+#         return jsonify({
+#             'message': 'Login successful',
+#             'access_token': access_token,
+#             'user': {
+#                 'id': user.id,
+#                 'name': user.name,
+#                 'email': user.email,
+#                 'role': user.role
+#             }
+#         }), 200
+#     return jsonify({'message': 'Invalid email or password'}), 401
+
+# @auth_bp.route('/me', methods=['GET'])
+# @jwt_required()
+# def get_current_user():
+#     user_id = get_jwt_identity()
+#     user = User.query.get(user_id)
+#     if user:
+#         return jsonify({
+#             'id': user.id,
+#             'name': user.name,
+#             'email': user.email,
+#             'role': user.role
+#         }), 200
+#     return jsonify({'message': 'User not found'}), 404
+from flask import Blueprint, request, jsonify
+from app.db import db
+from app.model.User import User
+from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
+
+auth_bp = Blueprint('auth', __name__)
+
+@auth_bp.route('/login', methods=['POST'])
+def login():
+    try:
+        logger.debug("Received login request: %s", request.get_json())
+        data = request.get_json()
+        email = data.get('email')
+        password = data.get('password')
+
+        if not email or not password:
+            logger.warning("Missing email or password")
+            return jsonify({'message': 'Email and password are required'}), 400
+
+        user = User.query.filter_by(email=email).first()
+        if not user:
+            logger.warning("User not found for email: %s", email)
+            return jsonify({'message': 'Invalid email or password'}), 401
+
+        if not user.check_password(password):
+            logger.warning("Invalid password for email: %s", email)
+            return jsonify({'message': 'Invalid email or password'}), 401
+
+        access_token = create_access_token(identity=str(user.id))  # Ensure string
+        logger.debug("Generated token for user %s: %s", user.id, access_token)
+        return jsonify({
+            'access_token': access_token,
+            'user': {'id': user.id, 'name': user.name, 'email': user.email, 'role': user.role}
+        }), 200
+    except Exception as e:
+        logger.error("Login error: %s", str(e))
+        return jsonify({'message': 'Server error during login'}), 500
+
+@auth_bp.route('/register', methods=['POST'])
+def register():
+    try:
+        logger.debug("Received register request: %s", request.get_json())
+        data = request.get_json()
+        name = data.get('name')
+        email = data.get('email')
+        password = data.get('password')
+
+        if not all([name, email, password]):
+            logger.warning("Missing required fields")
+            return jsonify({'message': 'Missing required fields'}), 400
+
+        if User.query.filter_by(email=email).first():
+            logger.warning("Email already registered: %s", email)
+            return jsonify({'message': 'Email already registered'}), 400
+
+        user = User(name=name, email=email)
+        user.set_password(password)
+        db.session.add(user)
+        db.session.commit()
+        logger.debug("User registered: %s", email)
+        return jsonify({'message': 'User registered successfully'}), 201
+    except Exception as e:
+        logger.error("Register error: %s", str(e))
+        return jsonify({'message': 'Server error during registration'}), 500
+
+@auth_bp.route('/me', methods=['GET'])
+@jwt_required()
+def me():
+    try:
+        user_id = get_jwt_identity()
+        logger.debug("Fetching user with ID: %s", user_id)
+        user = User.query.get(int(user_id))
+        if not user:
+            logger.warning("User not found: %s", user_id)
+            return jsonify({'message': 'User not found'}), 404
+        logger.debug("User fetched: %s", user.email)
+        return jsonify({
+            'id': user.id,
+            'name': user.name,
+            'email': user.email,
+            'role': user.role
+        }), 200
+    except Exception as e:
+        logger.error("Error fetching user: %s", str(e))
+        return jsonify({'message': 'Server error'}), 500

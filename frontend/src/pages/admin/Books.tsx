@@ -10,8 +10,8 @@ interface Book {
   description: string;
   rating: number;
   summary: string;
-  authors: { name: string }[];
-  categories: { name: string }[];
+  authors: string[];
+  categories: string[];
   borrow_count: number;
   total_books: number;
   available_books: number;
@@ -33,15 +33,48 @@ const BooksPage: React.FC = () => {
   const fetchBooks = async (query: string = '') => {
     try {
       setLoading(true);
+      setError(null);
+
+      const token = localStorage.getItem('token');
+      if (!token) {
+        throw new Error('No authentication token found');
+      }
+
       const url = query ? `/api/books?search=${encodeURIComponent(query)}` : '/api/books';
-      const response = await fetch(url);
-      if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        if (response.status === 401) {
+          throw new Error('Unauthorized: Please log in again');
+        }
+        if (response.status === 403) {
+          throw new Error('Forbidden: Admin access required');
+        }
+        if (response.status === 500) {
+          throw new Error('Server error: Unable to process search');
+        }
+        throw new Error(`HTTP error! Status: ${response.status}`);
+      }
+
       const data = await response.json();
-      setBooks(data);
+      console.log('Books response:', data);
+      if (!data.books || !Array.isArray(data.books)) {
+        throw new Error('Invalid response format: Expected { books: [...] }');
+      }
+
+      setBooks(data.books);
       setError(null);
     } catch (err) {
-      setError('Failed to fetch books. Please try again later.');
+      const errorMessage = err instanceof Error ? err.message : 'Failed to fetch books. Please try again later.';
+      setError(errorMessage);
       console.error('Error fetching books:', err);
+      setBooks([]);
     } finally {
       setLoading(false);
     }
@@ -64,18 +97,41 @@ const BooksPage: React.FC = () => {
   const handleDeleteBook = async (bookId: number) => {
     if (window.confirm('Are you sure you want to delete this book?')) {
       try {
-        const response = await fetch(`/api/books/${bookId}`, { method: 'DELETE' });
-        if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
+        const token = localStorage.getItem('token');
+        if (!token) {
+          throw new Error('No authentication token found');
+        }
+
+        const response = await fetch(`/api/books/${bookId}`, {
+          method: 'DELETE',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+        });
+
+        if (!response.ok) {
+          if (response.status === 403) {
+            throw new Error('Forbidden: Admin access required to delete books');
+          }
+          if (response.status === 404) {
+            throw new Error('Book not found');
+          }
+          throw new Error(`HTTP error! Status: ${response.status}`);
+        }
+
         setBooks(books.filter(book => book.id !== bookId));
+        setError(null);
       } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : 'Failed to delete book. Please try again.';
+        setError(errorMessage);
         console.error('Error deleting book:', err);
-        setError('Failed to delete book. Please try again.');
       }
     }
   };
 
   const handleEditBook = (bookId: number) => {
-    navigate(`/edit/${bookId}`);
+    navigate(`/admin/edit/${bookId}`);
   };
 
   const getSortIcon = (field: keyof Book) => {
@@ -87,7 +143,7 @@ const BooksPage: React.FC = () => {
     const aValue = a[sortField];
     const bValue = b[sortField];
     if (typeof aValue === 'string' && typeof bValue === 'string') {
-      return sortDirection === 'asc' ? aValue.localeCompare(bValue) : bValue.localeCompare(aValue);
+      return sortDirection === 'asc' ? aValue.localeCompare(bValue) : bValue.localeCompare(bValue);
     } else if (typeof aValue === 'number' && typeof bValue === 'number') {
       return sortDirection === 'asc' ? aValue - bValue : bValue - aValue;
     }
@@ -168,7 +224,12 @@ const BooksPage: React.FC = () => {
                         <div className="flex items-center">
                           <div className={`w-10 h-14 ${getCoverColor(book.title)} rounded flex items-center justify-center mr-3 text-white text-xs`}>
                             {book.cover_url ? (
-                              <img src={book.cover_url} alt={book.title} className="w-full h-full object-cover rounded" />
+                              <img
+                                src={book.cover_url}
+                                alt={book.title}
+                                className="w-full h-full object-cover rounded"
+                                onError={(e) => (e.currentTarget.style.display = 'none')}
+                              />
                             ) : (
                               <span>BOOK</span>
                             )}
@@ -176,9 +237,11 @@ const BooksPage: React.FC = () => {
                           <div className="font-medium">{book.title}</div>
                         </div>
                       </td>
-                      <td className="py-4 px-4">{book.authors.map(a => a.name).join(', ')}</td>
-                      <td className="py-4 px-4">{book.categories.map(c => c.name).join(', ')}</td>
-                      <td className="py-4 px-4">{book.available_books}/{book.total_books}</td>
+                      <td className="py-4 px-4">{book.authors.length > 0 ? book.authors.join(', ') : 'Unknown Author'}</td>
+                      <td className="py-4 px-4">{book.categories.length > 0 ? book.categories.join(', ') : 'Uncategorized'}</td>
+                      <td className="py-4 px-4">
+                        {book.available_books}/{book.total_books}
+                      </td>
                       <td className="py-4 px-4">
                         <div className="flex gap-3">
                           <button className="text-blue-500" onClick={() => handleEditBook(book.id)}>

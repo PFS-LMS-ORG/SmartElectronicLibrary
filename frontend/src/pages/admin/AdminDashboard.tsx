@@ -117,29 +117,77 @@ const AdminDashboard = () => {
   // Stats state
   const [stats, setStats] = useState({
     borrowedBooks: 0,
-    totalUsers: accountRequests.length,
+    totalUsers: 0,
     totalBooks: 0
   });
 
-  // Fetch borrow requests
+  // Fetch the number of users
   useEffect(() => {
-    const fetchBorrowRequests = async () => {
+    const fetchUsers = async () => {
       try {
-        setLoadingBorrowRequests(true);
-        const response = await fetch('api/books/rentals/requested');
+        const response = await fetch('/api/users');
         
         if (!response.ok) {
           throw new Error(`HTTP error! Status: ${response.status}`);
         }
         
         const result = await response.json();
-        console.log('Borrow requests data:', result);
-        setBorrowRequests(result);
+        console.log('Users data:', result);
+        setStats(prev => ({
+          ...prev,
+          totalUsers: result.length
+        }));
+      } catch (error) {
+        console.error('Error fetching users:', error);
+        setErrorRentals(error instanceof Error ? error.message : 'An unknown error occurred');
+      }
+    };
 
-        // Add this line to check if result is an array and has items
-      console.log('Borrow requests type:', typeof result, Array.isArray(result), result.length);
-      console.log('Borrow requests data:', result[0]);
-    
+    fetchUsers();
+  }, []);
+
+  // Fetch borrow requests
+  useEffect(() => {
+    const fetchBorrowRequests = async () => {
+      try {
+        setLoadingBorrowRequests(true);
+        setErrorBorrowRequests(null);
+
+        const token = localStorage.getItem('token');
+        if (!token) {
+          throw new Error('No authentication token found');
+        }
+
+        const response = await fetch('/api/rental_requests/pending', {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+        });
+        
+        if (!response.ok) {
+          if (response.status === 403) {
+            throw new Error('Admin access required');
+          }
+          throw new Error(`HTTP error! Status: ${response.status}`);
+        }
+        
+        const result = await response.json();
+        console.log('Borrow requests data:', result);
+
+        // Verify response structure
+        if (!result.requests || !Array.isArray(result.requests)) {
+          throw new Error('Invalid response format: Expected { requests: [...] }');
+        }
+
+        setBorrowRequests(result.requests);
+
+        // Debug logs
+        console.log('Borrow requests type:', typeof result.requests, Array.isArray(result.requests), result.requests.length);
+        if (result.requests.length > 0) {
+          console.log('First borrow request:', result.requests[0]);
+        }
       } catch (error) {
         console.error('Error fetching borrow requests:', error);
         setErrorBorrowRequests(error instanceof Error ? error.message : 'An unknown error occurred');
@@ -187,24 +235,47 @@ const AdminDashboard = () => {
     const fetchBooks = async () => {
       try {
         setLoadingBooks(true);
-        const response = await fetch('api/books');
+        setErrorBooks(null);
+
+        const token = localStorage.getItem('token');
+        if (!token) {
+          throw new Error('No authentication token found');
+        }
+
+        const response = await fetch('/api/books', {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+        });
         
         if (!response.ok) {
+          if (response.status === 401) {
+            throw new Error('Unauthorized access');
+          }
           throw new Error(`HTTP error! Status: ${response.status}`);
         }
         
         const result = await response.json();
         console.log('Books data:', result);
-        setBooks(result);
+
+        // Verify response structure
+        if (!result.books || !Array.isArray(result.books)) {
+          throw new Error('Invalid response format: Expected { books: [...] }');
+        }
+        
+        setBooks(result.books);
         
         // Update total books count
         setStats(prev => ({
           ...prev,
-          totalBooks: result.length
+          totalBooks: result.total_count || result.books.length
         }));
       } catch (error) {
         console.error('Error fetching books:', error);
         setErrorBooks(error instanceof Error ? error.message : 'An unknown error occurred');
+        setBooks([]); // Reset to empty array on error
       } finally {
         setLoadingBooks(false);
       }
@@ -215,15 +286,23 @@ const AdminDashboard = () => {
 
   // Get the most recently added books
   const getRecentlyAddedBooks = (): Book[] => {
+    // Ensure books is an array
+    if (!Array.isArray(books)) {
+      console.warn('books is not an array:', books);
+      return [];
+    }
+
     // Sort books by created_at date in descending order
-    return [...books].sort((a, b) => {
-      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-    }).slice(0, 6); // Get the 6 most recent books
+    return [...books]
+      .sort((a, b) => {
+        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      })
+      .slice(0, 6); // Get the 6 most recent books
   };
 
   const recentlyAddedBooks = getRecentlyAddedBooks();
 
-  console.log(borrowRequests[0]?.book)
+  console.log(borrowRequests[0]?.book);
 
   return (
     <Layout>
@@ -306,8 +385,8 @@ const AdminDashboard = () => {
                     <div>
                       <h3 className="font-medium text-sm">{request.book?.title || "Untitled Book"}</h3>
                       <p className="text-xs text-gray-500">
-                        By {request.book?.authors?.join(', ') || "Unknown Author"} • 
-                        {request.book?.categories?.join(', ') || "Uncategorized"}
+                        By {request.book?.authors?.toString() || "Unknown Author"} • 
+                        {request.book?.categories?.toString() || "Uncategorized"}
                       </p>
                       <div className="flex items-center mt-1">
                         <div className="w-5 h-5 rounded-full bg-gray-300 flex items-center justify-center overflow-hidden mr-1">

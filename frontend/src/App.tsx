@@ -1,32 +1,98 @@
-import { Routes, Route } from "react-router-dom";
-import Home from "./pages/Home";
-import Search from "./pages/SearchPage";
-import Reservations from "./pages/Reservations";
-import LibraryLoginPage from "./pages/LibraryLoginPage"
-import LibraryRegistrationPage from "./pages/LibraryRegistrationPage"
-import BookDetails from "./pages/BookDetails";
-import AdminDashboard from "./pages/AdminDashboard";
-import Users from "./pages/Users";
-import BooksPage from "./pages/Books";
-import EditBookPage from "./pages/EditBook";
+// App.tsx
+import { Routes, Route } from 'react-router-dom';
+import { ToastContainer } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
+import { AuthProvider } from './context/AuthContext';
+import ProtectedRoute from './components/ProtectedRoute';
+import Home from './pages/Home';
+import Search from './pages/SearchPage';
+import Reservations from './pages/Reservations';
+import Navbar from './pages/Navbar';
+import BackgroundWrapper from './components/ui/BackgroundWrapper';
+import LibraryLoginPage from './pages/LibraryLoginPage';
+import LibraryRegistrationPage from './pages/LibraryRegistrationPage';
+import BookDetails from './pages/BookDetails';
+import AdminDashboard from './pages/admin/AdminDashboard';
+import BooksPage from './pages/admin/Books';
+import UsersTable from './pages/admin/Users';
+import EditBookPage from './pages/admin/EditBook';
 
 function App() {
   return (
-    <>
-    <Routes>
-      <Route path="/" element={<Home />} />
-      <Route path="/search" element={<Search />} />
-      <Route path="/login" element={<LibraryLoginPage />} />
-      <Route path="/register" element={<LibraryRegistrationPage />} />
-      <Route path="/reservations" element={<Reservations />} />
-      <Route path="/edit/:id" element={<EditBookPage />} />
-      <Route path="/book/:id" element={<BookDetails />} />
-      <Route path="*" element={<div>Page Not Found</div>} />
-      <Route path="/admin" element={<AdminDashboard />} />
-      <Route path="/users" element={<Users />} />
-      <Route path="/books" element={<BooksPage />} />
-    </Routes>
-    </>
+    <AuthProvider>
+      <BackgroundWrapper>
+        <Navbar />
+        <Routes>
+          <Route path="/login" element={<LibraryLoginPage />} />
+          <Route path="/register" element={<LibraryRegistrationPage />} />
+          <Route
+            path="/"
+            element={
+              <ProtectedRoute>
+                <Home />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/search"
+            element={
+              <ProtectedRoute>
+                <Search />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/reservations"
+            element={
+              <ProtectedRoute>
+                <Reservations />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/book/:id"
+            element={
+              <ProtectedRoute>
+                <BookDetails />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin"
+            element={
+            <ProtectedRoute requiredRole="admin">
+              <AdminDashboard />
+            </ProtectedRoute>}
+          />
+          <Route
+            path="/admin/users"
+            element={
+              <ProtectedRoute requiredRole="admin">
+                <UsersTable />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/books"
+            element={
+              <ProtectedRoute requiredRole="admin">
+                <BooksPage/>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/edit/:id"
+            element={
+              <ProtectedRoute requiredRole="admin">
+                <EditBookPage/>
+              </ProtectedRoute>
+            }
+          />
+          <Route path="*" element={<div className="container mx-auto px-8 py-8 text-white">Page Not Found</div>} />
+        </Routes>
+        <ToastContainer position="top-right" autoClose={3000} />
+      </BackgroundWrapper>
+    </AuthProvider>
   );
 }
 
