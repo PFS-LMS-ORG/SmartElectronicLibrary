@@ -86,11 +86,10 @@ def get_popular_books():
 def get_featured_books():
     logger.debug("Fetching featured books")
     books = BookService.get_featured_book() or []
-    logger.debug("Featured books fetched: %d", len(books))
     if not books:
         logger.warning("No featured book found")
         return jsonify({'message': 'No featured book found'}), 404
-    return jsonify(books[0].to_dict())
+    return jsonify(books.to_dict())
 
 @book_controller.route('/books/<int:book_id>', methods=['GET'])
 @jwt_required()
