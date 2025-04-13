@@ -104,7 +104,31 @@ def get_book_by_id(book_id):
     logger.warning("Book not found: %d", book_id)
     return jsonify({'error': 'Book not found'}), 404
 
+@book_controller.route('/books/<int:book_id>', methods=['PUT'])
+@jwt_required()
+def update_book(book_id):
+    """
+    Updates an existing book (admin only).
+    Body: { title, cover_url, description, rating, summary, authors, categories, total_books, available_books, featured_book }
+    """
 
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+
+        book = BookService.update_book(book_id, data)
+        if not book:
+            return jsonify({'error': 'Book not found'}), 404
+
+        logger.debug("Book updated: %s", book.title)
+        return jsonify(book.to_dict()), 200
+    except ValueError as e:
+        logger.error("Error updating book: %s", str(e))
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        logger.error("Internal error updating book: %s", str(e))
+        return jsonify({'error': 'Internal server error'}), 500
 
 @book_controller.route('/books/related', methods=['GET'])
 @jwt_required()

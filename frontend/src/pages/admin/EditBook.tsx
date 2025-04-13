@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
-import axios from "axios";
+import React, { useState, useEffect } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import Layout from '@/components/layout/layout';
 
 interface Book {
   id: number;
@@ -15,253 +15,326 @@ interface Book {
   total_books: number;
   available_books: number;
   featured_book: boolean;
-  created_at: string;
 }
 
 const EditBookPage: React.FC = () => {
-  const { id } = useParams<{ id: string }>();
+  const { id } = useParams<{ id: string }>(); // Get book ID from URL
   const navigate = useNavigate();
-  const [book, setBook] = useState<Book>({
-    id: 0,
-    title: "",
-    cover_url: "",
-    description: "",
+  const [book, setBook] = useState<Book | null>(null);
+  const [formData, setFormData] = useState<Partial<Book>>({
+    title: '',
+    cover_url: '',
+    description: '',
     rating: 0,
-    summary: "",
+    summary: '',
     authors: [],
     categories: [],
     borrow_count: 0,
     total_books: 0,
     available_books: 0,
     featured_book: false,
-    created_at: "",
   });
-
   const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState<boolean>(false);
 
+  // Fetch book data
   useEffect(() => {
-    setLoading(true);  // Set loading to true when fetching starts
-    fetch(`/api/books/${id}`)
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error('Network response was not ok');
+    const fetchBook = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+
+        const token = localStorage.getItem('token');
+        if (!token) {
+          throw new Error('No authentication token found');
         }
-        return response.json();  // Parse the JSON data
-      })
-      .then((data) => {
-        setBook(data);  // Update the book state with the fetched data
-        console.log(data);
-        setLoading(false);  // Set loading to false when data is fetched
-      })
-      .catch((error) => {
-        console.error("Error fetching book:", error);  // Handle errors
-        setLoading(false);  // Set loading to false even if there's an error
-      });
-  }, [id]);
-  
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-    const { name, value, type } = e.target;
+        const response = await fetch(`/api/books/${id}`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+        });
 
-    setBook(prevBook => ({
-      ...prevBook,
-      [name]:
-        type === "number"
-          ? parseFloat(value)
-          : name === "featured_book"
-          ? value === "true"
-          : value,
-    }));
-  };
+        if (!response.ok) {
+          if (response.status === 404) throw new Error('Book not found');
+          if (response.status === 401) throw new Error('Unauthorized: Please log in again');
+          throw new Error(`HTTP error! Status: ${response.status}`);
+        }
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    setSubmitting(true);
-
-    const updatedBook = {
-      ...book,
-      authors: book.authors.filter(a => a.trim() !== ""),
-      categories: book.categories.filter(c => c.trim() !== "")
+        const data = await response.json();
+        setBook(data);
+        setFormData({
+          title: data.title,
+          cover_url: data.cover_url,
+          description: data.description,
+          rating: data.rating,
+          summary: data.summary,
+          authors: data.authors,
+          categories: data.categories,
+          borrow_count: data.borrow_count,
+          total_books: data.total_books,
+          available_books: data.available_books,
+          featured_book: data.featured_book,
+        });
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to fetch book');
+        console.error('Error fetching book:', err);
+      } finally {
+        setLoading(false);
+      }
     };
 
-    axios.put(`/api/books/${id}`, updatedBook)
-      .then(() => {
-        navigate("/books");
-      })
-      .catch(error => {
-        console.error("Error updating book:", error);
-        setSubmitting(false);
-      });
+    fetchBook();
+  }, [id]);
+
+  // Handle form input changes
+  const handleChange = (
+    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
+  ) => {
+    const { name, value, type } = e.target;
+    if (type === 'checkbox') {
+      setFormData((prev) => ({ ...prev, [name]: (e.target as HTMLInputElement).checked }));
+    } else {
+      setFormData((prev) => ({ ...prev, [name]: value }));
+    }
   };
 
-  if (loading) return <div>Loading book data...</div>;
+  // Handle authors and categories (comma-separated input)
+  const handleArrayChange = (name: 'authors' | 'categories', value: string) => {
+    const array = value
+      .split(',')
+      .map((item) => item.trim())
+      .filter((item) => item);
+    setFormData((prev) => ({ ...prev, [name]: array }));
+  };
 
-  console.log(book.title);
+  // Handle form submission
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSubmitting(true);
+    setError(null);
+
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        throw new Error('No authentication token found');
+      }
+
+      const response = await fetch(`/api/books/${id}`, {
+        method: 'PUT',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(formData),
+      });
+
+      if (!response.ok) {
+        if (response.status === 403) throw new Error('Forbidden: Admin access required');
+        if (response.status === 404) throw new Error('Book not found');
+        if (response.status === 400) {
+          const data = await response.json();
+          throw new Error(data.error || 'Invalid data provided');
+        }
+        throw new Error(`HTTP error! Status: ${response.status}`);
+      }
+
+      navigate('/admin/books', { state: { message: 'Book updated successfully' } });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update book');
+      console.error('Error updating book:', err);
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   return (
-    <div className="max-w-4xl mx-auto px-4 py-10">
-      <h1 className="text-2xl font-bold mb-6">Edit Book</h1>
-      <form onSubmit={handleSubmit}>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+    <Layout>
+      <div className="container mx-auto px-4 py-6">
+        <div className="bg-white rounded-lg shadow-lg p-6 max-w-2xl mx-auto">
+          <h1 className="text-2xl font-semibold text-gray-800 mb-6">Edit Book</h1>
 
-          <div className="col-span-2">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
-            <input
-              type="text"
-              name="title"
-              value={book.title}
-              onChange={handleInputChange}
-              className="w-full px-4 py-2 border border-gray-300 rounded-md"
-              required
-            />
-          </div>
+          {loading ? (
+            <div className="flex justify-center items-center h-40">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+            </div>
+          ) : error ? (
+            <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+              {error}
+            </div>
+          ) : (
+            <form onSubmit={handleSubmit} className="space-y-4">
+              {/* Title */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Title</label>
+                <input
+                  type="text"
+                  name="title"
+                  value={formData.title || ''}
+                  onChange={handleChange}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  required
+                />
+              </div>
 
-          <div className="col-span-2">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Cover Image URL</label>
-            <input
-              type="text"
-              name="cover_url"
-              value={book.cover_url}
-              onChange={handleInputChange}
-              className="w-full px-4 py-2 border border-gray-300 rounded-md"
-            />
-          </div>
+              {/* Cover URL */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Cover URL</label>
+                <input
+                  type="url"
+                  name="cover_url"
+                  value={formData.cover_url || ''}
+                  onChange={handleChange}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                {formData.cover_url && (
+                  <img
+                    src={formData.cover_url}
+                    alt="Cover preview"
+                    className="mt-2 w-24 h-32 object-cover rounded"
+                    onError={(e) => (e.currentTarget.style.display = 'none')}
+                  />
+                )}
+              </div>
 
-          <div className="col-span-2">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Summary</label>
-            <textarea
-              name="summary"
-              value={book.summary}
-              onChange={handleInputChange}
-              rows={3}
-              className="w-full px-4 py-2 border border-gray-300 rounded-md"
-            />
-          </div>
+              {/* Description */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Description</label>
+                <textarea
+                  name="description"
+                  value={formData.description || ''}
+                  onChange={handleChange}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  rows={4}
+                />
+              </div>
 
-          <div className="col-span-2">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
-            <textarea
-              name="description"
-              value={book.description}
-              onChange={handleInputChange}
-              rows={4}
-              className="w-full px-4 py-2 border border-gray-300 rounded-md"
-            />
-          </div>
+              {/* Rating */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Rating (0-5)</label>
+                <input
+                  type="number"
+                  name="rating"
+                  value={formData.rating || 0}
+                  onChange={handleChange}
+                  min="0"
+                  max="5"
+                  step="0.1"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Rating</label>
-            <input
-              type="number"
-              name="rating"
-              value={book.rating}
-              onChange={handleInputChange}
-              className="w-full px-4 py-2 border border-gray-300 rounded-md"
-              step="0.1"
-              min="0"
-              max="5"
-            />
-          </div>
+              {/* Summary */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Summary</label>
+                <textarea
+                  name="summary"
+                  value={formData.summary || ''}
+                  onChange={handleChange}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  rows={4}
+                />
+              </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Borrow Count</label>
-            <input
-              type="number"
-              name="borrow_count"
-              value={book.borrow_count}
-              onChange={handleInputChange}
-              className="w-full px-4 py-2 border border-gray-300 rounded-md"
-            />
-          </div>
+              {/* Authors */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Authors (comma-separated)</label>
+                <input
+                  type="text"
+                  value={formData.authors?.join(', ') || ''}
+                  onChange={(e) => handleArrayChange('authors', e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="Jane Austen, John Smith"
+                />
+              </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Total Books</label>
-            <input
-              type="number"
-              name="total_books"
-              value={book.total_books}
-              onChange={handleInputChange}
-              className="w-full px-4 py-2 border border-gray-300 rounded-md"
-            />
-          </div>
+              {/* Categories */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Categories (comma-separated)</label>
+                <input
+                  type="text"
+                  value={formData.categories?.join(', ') || ''}
+                  onChange={(e) => handleArrayChange('categories', e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="Fiction, Classic"
+                />
+              </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Available Books</label>
-            <input
-              type="number"
-              name="available_books"
-              value={book.available_books}
-              onChange={handleInputChange}
-              className="w-full px-4 py-2 border border-gray-300 rounded-md"
-            />
-          </div>
+              {/* Borrow Count */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Borrow Count</label>
+                <input
+                  type="number"
+                  name="borrow_count"
+                  value={formData.borrow_count || 0}
+                  onChange={handleChange}
+                  min="0"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Featured</label>
-            <select
-              name="featured_book"
-              value={book.featured_book ? "true" : "false"}
-              onChange={(e) =>
-                setBook((prev) => ({
-                  ...prev,
-                  featured_book: e.target.value === "true",
-                }))
-              }
-              className="w-full px-4 py-2 border border-gray-300 rounded-md"
-            >
-              <option value="false">No</option>
-              <option value="true">Yes</option>
-            </select>
-          </div>
+              {/* Total Books */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Total Books</label>
+                <input
+                  type="number"
+                  name="total_books"
+                  value={formData.total_books || 0}
+                  onChange={handleChange}
+                  min="0"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
 
-          <div className="col-span-2">
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Authors (comma separated)
-            </label>
-            <textarea
-              name="authors"
-              value={book.authors? book.authors.join(", "):''}
-              onChange={(e) =>
-                setBook((prev) => ({
-                  ...prev,
-                  authors: e.target.value.split(",").map((a) => a.trim()),
-                }))
-              }
-              className="w-full px-4 py-2 border border-gray-300 rounded-md"
-              rows={2}
-            />
-          </div>
+              {/* Available Books */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Available Books</label>
+                <input
+                  type="number"
+                  name="available_books"
+                  value={formData.available_books || 0}
+                  onChange={handleChange}
+                  min="0"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
 
-          <div className="col-span-2">
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Categories (comma separated)
-            </label>
-            <textarea
-              name="categories"
-              value={book.categories?book.categories.join(", "):''}
-              onChange={(e) =>
-                setBook((prev) => ({
-                  ...prev,
-                  categories: e.target.value.split(",").map((c) => c.trim()),
-                }))
-              }
-              className="w-full px-4 py-2 border border-gray-300 rounded-md"
-              rows={2}
-            />
-          </div>
+              {/* Featured Book */}
+              <div className="flex items-center">
+                <input
+                  type="checkbox"
+                  name="featured_book"
+                  checked={formData.featured_book || false}
+                  onChange={handleChange}
+                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                />
+                <label className="ml-2 text-sm font-medium text-gray-700">Featured Book</label>
+              </div>
 
+              {/* Buttons */}
+              <div className="flex gap-4 mt-6">
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className={`px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-blue-400 disabled:cursor-not-allowed`}
+                >
+                  {submitting ? 'Saving...' : 'Save Changes'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => navigate('/admin/books')}
+                  className="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-500"
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          )}
         </div>
-
-        <button
-          type="submit"
-          disabled={submitting}
-          className="mt-6 bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
-        >
-          {submitting ? "Saving..." : "Save Changes"}
-        </button>
-      </form>
-    </div>
+      </div>
+    </Layout>
   );
 };
 
