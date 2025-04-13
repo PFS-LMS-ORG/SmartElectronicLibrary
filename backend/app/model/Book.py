@@ -14,6 +14,7 @@ class Book(db.Model):
     total_books = db.Column(db.Integer, default=0)  # Total number of copies of the book available
     available_books = db.Column(db.Integer, default=0)  # Number of copies currently available for borrowing
     featured_book = db.Column(db.Boolean, default=False)  # Whether the book is featured or not
+    created_at = db.Column(db.DateTime, default=db.func.current_timestamp())
 
     authors = db.relationship(
         "Author",
@@ -28,6 +29,7 @@ class Book(db.Model):
     )
 
     rentals = db.relationship("Rental", back_populates="book")
+    rental_requests = db.relationship("RentalRequest", back_populates="book")
 
     def __repr__(self):
         return f"<Book {self.title}> by {', '.join([author.name for author in self.authors])}"
@@ -45,5 +47,6 @@ class Book(db.Model):
             'borrow_count': self.borrow_count,
             'total_books': self.total_books,
             'available_books': self.available_books,
-            'featured_book': self.featured_book
+            'featured_book': self.featured_book,
+            'created_at': self.created_at.strftime('%Y-%m-%d %H:%M:%S')
         }

@@ -3,6 +3,7 @@ import BackgroundWrapper from '@/components/ui/BackgroundWrapper';
 import BookCover from '@/components/ui/BookCover';
 import { Button } from '@/components/ui/button';
 import { useState , useEffect } from 'react';
+import Navbar from './Navbar';
 
 
 interface Book {
@@ -41,7 +42,10 @@ const BookWiseHomepage = () => {
   },[]);
 
   return (
+    <>
+    <Navbar />
     <BackgroundWrapper>
+      
       
 
       {/* Main Content */}
@@ -104,6 +108,7 @@ const BookWiseHomepage = () => {
         </section>
       </main>
     </BackgroundWrapper>
+    </>
   );
 };
 

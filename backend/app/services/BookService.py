@@ -2,6 +2,7 @@ from app.db import db
 from app.model.Book import Book
 from app.model.Author import Author
 from app.model.Category import Category
+from app.model.association_tables import book_author_association, book_category_association
 from sqlalchemy.orm import joinedload
 
 class BookService:
@@ -87,3 +88,51 @@ class BookService:
         :return: Book object or None
         """
         return Book.query.get(id)
+
+    @staticmethod
+    def get_all_books():
+        """
+        Fetches all books from the database.
+
+        :return: List of all books
+        """
+        return Book.query.all()
+    
+    @staticmethod
+    def get_book_count():
+        """
+        Fetches the total number of books in the database.
+
+        :return: Total number of books
+        """
+        return Book.query.count() if Book.query.first() else 0
+    
+    @staticmethod
+    def update_book(book_id, data):
+        book = Book.query.get(book_id)
+        if not book:
+            return None
+
+        # Basic fields
+        book.title = data.get('title', book.title)
+        book.cover_url = data.get('cover_url', book.cover_url)
+        book.description = data.get('description', book.description)
+        book.rating = data.get('rating', book.rating)
+        book.summary = data.get('summary', book.summary)
+        book.borrow_count = data.get('borrow_count', book.borrow_count)
+        book.total_books = data.get('total_books', book.total_books)
+        book.available_books = data.get('available_books', book.available_books)
+        book.featured_book = data.get('featured_book', book.featured_book)
+
+        # Update authors if provided
+        if 'authors' in data:
+            new_authors = Author.query.filter(Author.name.in_(data['authors'])).all()
+            book.authors = new_authors
+
+        # Update categories if provided
+        if 'categories' in data:
+            new_categories = Category.query.filter(Category.name.in_(data['categories'])).all()
+            book.categories = new_categories
+
+        db.session.commit()
+        return book

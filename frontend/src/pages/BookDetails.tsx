@@ -1,6 +1,7 @@
 import { useParams } from "react-router-dom";
 import { useEffect, useState } from "react";
 import axios from "axios";
+import BackgroundWrapper from "@/components/ui/BackgroundWrapper";
 
 interface Book {
   id: number;
@@ -42,7 +43,7 @@ const BookDetails = () => {
   if (!book) return <div className="text-white text-center py-10">Book not found!</div>;
 
   return (
-    <div className="container mx-auto px-6 lg:px-20 py-10 text-white">
+    <BackgroundWrapper className=" px-6 lg:px-20 py-10 text-white">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-12 items-start">
         {/* Book Cover */}
         <div className="flex justify-center">
@@ -91,7 +92,7 @@ const BookDetails = () => {
           </button>
         </div>
       </div>
-    </div>
+    </BackgroundWrapper>
   );
 };
 

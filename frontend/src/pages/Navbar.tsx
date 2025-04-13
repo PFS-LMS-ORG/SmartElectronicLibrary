@@ -2,7 +2,7 @@ import { Book } from "lucide-react"
 
 const Navbar = () => {
   return (
-    <nav className="text-white bg-transparent  flex items-center justify-between p-4 px-8 lg:px-16 border-b border-gray-800">
+    <nav className="text-white bg-[url('assets/EXPORT-BG.png')] flex items-center justify-between p-4 px-8 lg:px-16 border-b border-gray-800 backdrop-blur-md">
         <div className="flex items-center gap-2">
           <Book className="h-6 w-6 text-white" />
           <span className="text-xl font-bold">LMSENSA+</span>

@@ -15,3 +15,14 @@ class Rental(db.Model):
 
     def __repr__(self):
         return f"<Rental {self.id} - User {self.user_id} rented Book {self.book_id}>"
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'user_id': self.user_id,
+            'book_id': self.book_id,
+            'rented_at': self.rented_at.strftime('%Y-%m-%d %H:%M:%S'),
+            'returned_at': self.returned_at.strftime('%Y-%m-%d %H:%M:%S') if self.returned_at else None,
+            'user': self.user.name if self.user else None,
+            'book': self.book.title if self.book else None
+        }

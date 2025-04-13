@@ -4,6 +4,7 @@ import Mask from "../assets/Mask.png"
 import BackgroundWrapper from '@/components/ui/BackgroundWrapper';
 import BookCover from '@/components/ui/BookCover';
 import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from "@/components/ui/pagination";
+import Navbar from './Navbar';
 
 // Define the Book interface
 interface Book {
@@ -60,6 +61,8 @@ const SearchPage = () => {
   };
 
   return (
+    <>
+    <Navbar/>
     <BackgroundWrapper>
       <div className="min-h-screen bg-opacity-95 text-white">
         <main className="p-4 px-8 lg:px-16 pt-8 pb-16">
@@ -152,6 +155,7 @@ const SearchPage = () => {
         </main>
       </div>
     </BackgroundWrapper>
+    </>
   );
 };
 
