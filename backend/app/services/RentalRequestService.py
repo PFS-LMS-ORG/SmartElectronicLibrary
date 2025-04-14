@@ -1,36 +1,35 @@
-from app.model.RentalRequest import RentalRequest
-from app.model.Book import Book
-from app.model.User import User
+from app.model import RentalRequest, User, Book, Rental
 from app.db import db
+from app.services.RentalService import RentalService
 from sqlalchemy.exc import IntegrityError
-from flask_jwt_extended import get_jwt_identity
-from app.services.BookService import BookService
+from datetime import datetime
 
 class RentalRequestService:
     @staticmethod
-    def create_request(user_id: int, book_id: int) -> dict:
+    def create_request(user_id, book_id):
         """
-        Create a new rental request for a book by a user.
-        Returns the created request or raises an error if invalid.
+        Creates a new rental request for a book by a user.
         """
         book = Book.query.get(book_id)
         if not book:
             raise ValueError("Book not found")
-        
+        if book.available_books <= 0:
+            raise ValueError("No copies available for this book")
+
         user = User.query.get(user_id)
         if not user:
             raise ValueError("User not found")
-        
-        existing_request = RentalRequest.query.filter_by(book_id=book_id, status='approved').first()
-        if existing_request:
-            raise ValueError("Book is already rented")
 
-        if RentalRequest.query.filter_by(user_id=user_id, book_id=book_id, status='pending').first():
+        # Check for existing pending/approved request
+        existing_request = RentalRequest.query.filter_by(
+            user_id=user_id, book_id=book_id, status="pending"
+        ).first()
+        if existing_request:
             raise ValueError("You already have a pending request for this book")
 
+        request = RentalRequest(user_id=user_id, book_id=book_id)
+        db.session.add(request)
         try:
-            request = RentalRequest(user_id=user_id, book_id=book_id, status='pending')
-            db.session.add(request)
             db.session.commit()
             return request.to_dict()
         except IntegrityError:
@@ -38,45 +37,45 @@ class RentalRequestService:
             raise ValueError("Failed to create rental request")
 
     @staticmethod
-    def get_pending_requests() -> list:
+    def get_pending_requests():
         """
-        Get all pending rental requests.
+        Fetches all pending rental requests.
         """
-        requests = RentalRequest.query.filter_by(status='pending').all()
-        return [request.to_dict() for request in requests]
+        requests = RentalRequest.query.filter_by(status="pending").all()
+        return [req.to_dict() for req in requests]
 
     @staticmethod
-    def get_all_requests(page: int = 1, per_page: int = 10) -> dict:
+    def get_all_requests(page=1, per_page=10):
         """
-        Get all rental requests with pagination.
+        Fetches all rental requests with pagination.
         """
         query = RentalRequest.query
         total_count = query.count()
         requests = query.paginate(page=page, per_page=per_page, error_out=False).items
         return {
-            'requests': [request.to_dict() for request in requests],
-            'total_count': total_count,
-            'total_pages': (total_count + per_page - 1) // per_page
+            "requests": [req.to_dict() for req in requests],
+            "total_count": total_count,
+            "total_pages": (total_count + per_page - 1) // per_page,
         }
 
     @staticmethod
-    def get_user_requests(user_id: int, page: int = 1, per_page: int = 10) -> dict:
+    def get_user_requests(user_id, page=1, per_page=10):
         """
-        Get all rental requests for a specific user with pagination.
+        Fetches rental requests for a specific user with pagination.
         """
         query = RentalRequest.query.filter_by(user_id=user_id)
         total_count = query.count()
         requests = query.paginate(page=page, per_page=per_page, error_out=False).items
         return {
-            'requests': [request.to_dict() for request in requests],
-            'total_count': total_count,
-            'total_pages': (total_count + per_page - 1) // per_page
+            "requests": [req.to_dict() for req in requests],
+            "total_count": total_count,
+            "total_pages": (total_count + per_page - 1) // per_page,
         }
 
     @staticmethod
-    def get_request_by_id(request_id: int) -> dict:
+    def get_request_by_id(request_id):
         """
-        Get a specific rental request by ID.
+        Fetches a rental request by ID.
         """
         request = RentalRequest.query.get(request_id)
         if not request:
@@ -84,84 +83,92 @@ class RentalRequestService:
         return request.to_dict()
 
     @staticmethod
-    def approve_request(request_id: int) -> dict:
+    def approve_request(request_id):
         """
-        Approve a rental request and update book availability.
-        """
-        request = RentalRequest.query.get(request_id)
-        if not request:
-            raise ValueError("Rental request not found")
-        if request.status != 'pending':
-            raise ValueError("Only pending requests can be approved")
-
-        existing_approved = RentalRequest.query.filter_by(book_id=request.book_id, status='approved').first()
-        if existing_approved:
-            raise ValueError("Book is already rented")
-
-        try:
-            request.status = 'approved'
-            BookService.update_available_books(request.book_id, increment=False)
-            db.session.commit()
-            return request.to_dict()
-        except:
-            db.session.rollback()
-            raise ValueError("Failed to approve rental request")
-
-    @staticmethod
-    def reject_request(request_id: int) -> dict:
-        """
-        Reject a rental request (admin only).
+        Approves a rental request, creates a rental, and updates book availability.
         """
         request = RentalRequest.query.get(request_id)
         if not request:
             raise ValueError("Rental request not found")
-        if request.status != 'pending':
-            raise ValueError("Only pending requests can be rejected")
+        if request.status != "pending":
+            raise ValueError("Request is not pending")
+
+        book = Book.query.get(request.book_id)
+        if not book:
+            raise ValueError("Book not found")
+        if book.available_books <= 0:
+            raise ValueError("No copies available for this book")
 
         try:
-            request.status = 'rejected'
+            # Start transaction
+            request.status = "approved"
+            
+            # Create rental
+            rental = RentalService.create_rental(request.user_id, request.book_id, update_book=True)
+            
+            # Update book
+            book.available_books -= 1
+            book.borrow_count += 1
+
             db.session.commit()
             return request.to_dict()
-        except:
+        except (IntegrityError, ValueError) as e:
             db.session.rollback()
-            raise ValueError("Failed to reject rental request")
+            raise ValueError(f"Failed to approve request: {str(e)}")
+        except Exception as e:
+            db.session.rollback()
+            raise ValueError("Internal server error")
 
     @staticmethod
-    def cancel_request(request_id: int, user_id: int) -> dict:
+    def reject_request(request_id):
         """
-        Cancel a pending rental request without affecting book availability.
-        
-        :param request_id: ID of the rental request
-        :param user_id: ID of the user attempting to cancel
-        :return: Success message
+        Rejects a rental request.
         """
         request = RentalRequest.query.get(request_id)
-        print(f"Cancel request: request.user_id={request.user_id}, user_id={user_id}")  # Debug log
+        if not request:
+            raise ValueError("Rental request not found")
+        if request.status != "pending":
+            raise ValueError("Request is not pending")
+
+        try:
+            request.status = "rejected"
+            db.session.commit()
+            return request.to_dict()
+        except IntegrityError:
+            db.session.rollback()
+            raise ValueError("Failed to reject request")
+
+    @staticmethod
+    def cancel_request(request_id, user_id):
+        """
+        Cancels a user's own rental request.
+        """
+        request = RentalRequest.query.get(request_id)
         if not request:
             raise ValueError("Rental request not found")
         if request.user_id != user_id:
             raise ValueError("You can only cancel your own requests")
-        if request.status != 'pending':
+        if request.status != "pending":
             raise ValueError("Only pending requests can be canceled")
 
         try:
             db.session.delete(request)
             db.session.commit()
-            return {'message': 'Rental request canceled successfully'}
-        except:
+            return {"message": "Rental request canceled"}
+        except IntegrityError:
             db.session.rollback()
-            raise ValueError("Failed to cancel rental request")
+            raise ValueError("Failed to cancel request")
 
     @staticmethod
-    def get_all_requested_books() -> list:
+    def get_all_requested_books():
         """
-        Get all books that have pending rental requests.
+        Fetches all books with pending rental requests.
         """
-        requested_books = (
+        books = (
             db.session.query(Book)
             .join(RentalRequest)
-            .filter(RentalRequest.status == 'pending')
+            .filter(RentalRequest.status == "pending")
             .distinct()
             .all()
         )
-        return [book.to_dict() for book in requested_books]
+        return [book.to_dict() for book in books]

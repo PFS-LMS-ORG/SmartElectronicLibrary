@@ -116,7 +116,7 @@ def get_rental_request(request_id):
 @jwt_required()
 def approve_rental_request(request_id):
     """
-    Approve a rental request (admin only).
+    Approve a rental request, create a rental, and update book (admin only).
     """
     try:
         admin_check = check_admin()

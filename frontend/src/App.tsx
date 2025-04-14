@@ -17,6 +17,7 @@ import BooksPage from './pages/admin/Books';
 import UsersTable from './pages/admin/Users';
 import EditBookPage from './pages/admin/EditBook';
 import AdminRequestsPage from './pages/admin/Requests';
+import AdminRentalsPage from './pages/admin/AdminRentalsPage';
 
 function App() {
   return (
@@ -97,6 +98,15 @@ function App() {
               </ProtectedRoute>
             }
           />
+          <Route
+            path="/admin/rentals"
+            element={
+              <ProtectedRoute requiredRole="admin">
+                <AdminRentalsPage/>
+              </ProtectedRoute>
+            }
+          />
+
           <Route path="*" element={<div className="container mx-auto px-8 py-8 text-white">Page Not Found</div>} />
         </Routes>
         <ToastContainer position="top-right" autoClose={3000} />

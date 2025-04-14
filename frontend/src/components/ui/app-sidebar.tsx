@@ -38,7 +38,7 @@ import {
     },
     {
       title: "Borrow Requests",
-      url: "#",
+      url: "/admin/requests",
       icon: FileClock, // 🕒 File with clock icon = pending requests
     },
     {
