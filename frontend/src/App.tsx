@@ -16,6 +16,7 @@ import AdminDashboard from './pages/admin/AdminDashboard';
 import BooksPage from './pages/admin/Books';
 import UsersTable from './pages/admin/Users';
 import EditBookPage from './pages/admin/EditBook';
+import AdminRequestsPage from './pages/admin/Requests';
 
 function App() {
   return (
@@ -85,6 +86,14 @@ function App() {
             element={
               <ProtectedRoute requiredRole="admin">
                 <EditBookPage/>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/requests"
+            element={
+              <ProtectedRoute requiredRole="admin">
+                <AdminRequestsPage/>
               </ProtectedRoute>
             }
           />
