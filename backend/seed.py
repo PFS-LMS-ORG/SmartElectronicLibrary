@@ -151,7 +151,7 @@ with app.app_context():
     user1.set_password("password123")
     user2 = User(name="Bob", email="bob@example.com")
     user2.set_password("password123")
-    user3 = User(name="Charlie", email="charlie@example.com")
+    user3 = User(name="Charlie", email="charlie@example.com", role="admin")
     user3.set_password("password123")
 
     # Add rentals
