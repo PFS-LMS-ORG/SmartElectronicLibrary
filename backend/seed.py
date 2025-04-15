@@ -144,12 +144,14 @@ with app.app_context():
         horror, suspense, software, hp, lotr, origin, fury, maidens, gerald, dont_turn, design_patterns
     ])
 
+    
+
     # Add mock users with email and password
     user1 = User(name="Alice", email="alice@example.com")
     user1.set_password("password123")
     user2 = User(name="Bob", email="bob@example.com")
     user2.set_password("password123")
-    user3 = User(name="Charlie", email="charlie@example.com")
+    user3 = User(name="Charlie", email="charlie@example.com", role="admin")
     user3.set_password("password123")
 
     # Add rentals
