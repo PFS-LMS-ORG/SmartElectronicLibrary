@@ -4,7 +4,10 @@ from flask_jwt_extended import JWTManager
 from app.db import db
 from flask_migrate import Migrate
 from app.controllers.book_controller import book_controller
+from app.controllers.rental_request_controller import rental_request_controller
 from app.controllers.auth_controller import auth_bp
+from app.controllers.user_controller import user_controller
+from app.controllers.rental_controller import rental_controller
 from dotenv import load_dotenv
 import os
 import logging
@@ -30,6 +33,9 @@ def create_app():
 
     logger.debug("Registering blueprints")
     app.register_blueprint(book_controller)
+    app.register_blueprint(rental_request_controller)
+    app.register_blueprint(user_controller)
+    app.register_blueprint(rental_controller)
     app.register_blueprint(auth_bp, url_prefix='/auth')
 
     logger.debug("App creation complete")
