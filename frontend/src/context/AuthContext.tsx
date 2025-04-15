@@ -1,3 +1,4 @@
+// contexts/authcontext.tsx
 import React, { createContext, useState, useEffect, ReactNode } from 'react';
 import { getCurrentUser, login, logout as authLogout } from '../services/auth';
 
@@ -5,15 +6,18 @@ interface User {
   id: number;
   name: string;
   email: string;
-  role: string;
+  role: 'user' | 'admin'; // Use union type for type safety
 }
 
 interface AuthContextType {
   user: User | null;
   isAuthenticated: boolean;
-  isLoading: boolean; // Expose loading state
+  isLoading: boolean;
   login: (email: string, password: string) => Promise<void>;
   logout: () => void;
+  isAdmin: () => boolean;
+  isUser: () => boolean;
+  requireRole: (requiredRole: 'user' | 'admin') => boolean;
 }
 
 export const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -21,7 +25,7 @@ export const AuthContext = createContext<AuthContextType | undefined>(undefined)
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [isLoading, setIsLoading] = useState(true); // Renamed for clarity
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     const initializeAuth = async () => {
@@ -32,7 +36,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         try {
           const userData = await getCurrentUser();
           console.log('User fetched:', userData);
-          setUser(userData);
+          const transformedUser = {
+            ...userData,
+            role: userData.role as 'user' | 'admin', // Ensure role matches the expected type
+          };
+          setUser(transformedUser);
           setIsAuthenticated(true);
         } catch (error) {
           console.error('Failed to fetch user:', error);
@@ -54,7 +62,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     console.log('Logging in:', email);
     const { user } = await login({ email, password });
     console.log('Login successful, user:', user);
-    setUser(user);
+    setUser({
+      ...user,
+      role: user.role as 'user' | 'admin', // Ensure role matches the expected type
+    });
     setIsAuthenticated(true);
   };
 
@@ -65,6 +76,19 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setIsAuthenticated(false);
   };
 
+  // Role-based functions
+  const isAdmin = () => {
+    return isAuthenticated && user?.role === 'admin';
+  };
+
+  const isUser = () => {
+    return isAuthenticated && user?.role === 'user';
+  };
+
+  const requireRole = (requiredRole: 'user' | 'admin') => {
+    return isAuthenticated && user?.role === requiredRole;
+  };
+
   if (isLoading) {
     console.log('Rendering loading state');
     return <div className="flex h-screen items-center justify-center bg-gray-100">Loading...</div>;
@@ -72,7 +96,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   return (
     <AuthContext.Provider
-      value={{ user, isAuthenticated, isLoading, login: handleLogin, logout: handleLogout }}
+      value={{
+        user,
+        isAuthenticated,
+        isLoading,
+        login: handleLogin,
+        logout: handleLogout,
+        isAdmin,
+        isUser,
+        requireRole,
+      }}
     >
       {children}
     </AuthContext.Provider>
