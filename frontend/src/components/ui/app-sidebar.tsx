@@ -5,6 +5,7 @@ import {
     Book,
     FileClock,
     UserPlus,
+    BookOpenCheck
   } from "lucide-react"
 
 import {
@@ -40,6 +41,11 @@ import {
       title: "Borrow Requests",
       url: "/admin/requests",
       icon: FileClock, // 🕒 File with clock icon = pending requests
+    },
+    {
+      title: "Rentals",
+      url: "/admin/rentals",
+      icon : BookOpenCheck, // 🕒 File with clock icon = rentals
     },
     {
       title: "Account Requests",
