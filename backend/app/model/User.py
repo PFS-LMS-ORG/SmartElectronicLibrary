@@ -13,6 +13,7 @@ class User(db.Model):
     role = db.Column(db.String(10), default='user')
 
     rentals = db.relationship('Rental', back_populates='user')
+    rental_requests = db.relationship('RentalRequest', back_populates='user')
 
     def set_password(self, password):
         """Hash and set the user's password."""
@@ -24,3 +25,13 @@ class User(db.Model):
 
     def __repr__(self):
         return f"<User {self.name} ({self.email})>"
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'name': self.name,
+            'email': self.email,
+            'role': self.role,
+            'rentals': [rental.to_dict() for rental in self.rentals],
+            'rental_requests': [request.to_dict() for request in self.rental_requests]
+        } if self else None
