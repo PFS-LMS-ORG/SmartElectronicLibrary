@@ -23,6 +23,14 @@ class User(db.Model):
         """Verify the provided password against the stored hash."""
         return bcrypt.check_password_hash(self.password_hash, password)
 
+    def set_password(self, password):
+        """Hash and set the user's password."""
+        self.password_hash = bcrypt.generate_password_hash(password).decode('utf-8')
+
+    def check_password(self, password):
+        """Verify the provided password against the stored hash."""
+        return bcrypt.check_password_hash(self.password_hash, password)
+
     def __repr__(self):
         return f"<User {self.name} ({self.email})>"
     

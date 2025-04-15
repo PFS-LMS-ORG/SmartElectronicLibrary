@@ -205,14 +205,14 @@ const BookDetails = () => {
 
   // Book gradient colors based on categories
   const gradientColors = {
-    Fiction: "from-blue-600 to-purple-600",
+    "Fiction": "from-blue-600 to-purple-600",
     "Non-Fiction": "from-emerald-600 to-teal-600",
-    Mystery: "from-purple-600 to-pink-600",
+    "Mystery": "from-purple-600 to-pink-600",
     "Science Fiction": "from-cyan-600 to-blue-600",
-    Romance: "from-pink-600 to-red-600",
-    Biography: "from-amber-600 to-orange-600",
-    History: "from-lime-600 to-emerald-600",
-    default: "from-indigo-600 to-purple-600",
+    "Romance": "from-pink-600 to-red-600",
+    "Biography": "from-amber-600 to-orange-600",
+    "History": "from-lime-600 to-emerald-600",
+    "default": "from-indigo-600 to-purple-600"
   };
 
   const getGradient = () => {
@@ -357,7 +357,6 @@ const BookDetails = () => {
             <h1 className="text-4xl sm:text-5xl font-extrabold mb-4 leading-tight">
               {book.title}
             </h1>
-
             {/* Authors in stylish boxes */}
             <div className="flex flex-wrap gap-2 mb-6">
               {book.authors.map((author, index) => (
@@ -373,7 +372,6 @@ const BookDetails = () => {
                 </motion.div>
               ))}
             </div>
-
             {/* Categories */}
             <div className="mb-8">
               <div className="flex flex-wrap gap-2 mt-2">
@@ -391,7 +389,6 @@ const BookDetails = () => {
                 ))}
               </div>
             </div>
-
             {/* Tab Navigation */}
             <div className="border-b border-gray-700/50 mb-6">
               <div className="flex space-x-6">
@@ -414,7 +411,6 @@ const BookDetails = () => {
                 ))}
               </div>
             </div>
-
             {/* Tab Content */}
             <div className="min-h-56">
               <AnimatePresence mode="wait">
@@ -432,7 +428,6 @@ const BookDetails = () => {
                     </p>
                   </motion.div>
                 )}
-
                 {activeTab === "summary" && (
                   <motion.div
                     key="summary"
@@ -449,7 +444,6 @@ const BookDetails = () => {
                     </div>
                   </motion.div>
                 )}
-
                 {activeTab === "details" && (
                   <motion.div
                     key="details"

@@ -1,5 +1,9 @@
 from app.db import db
 from app.model.association_tables import book_author_association, book_category_association
+import logging
+
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 
 class Book(db.Model):
     __tablename__ = "books"
@@ -7,8 +11,8 @@ class Book(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     title = db.Column(db.String(100), nullable=False)
     cover_url = db.Column(db.String(255))
-    description = db.Column(db.String(500)) 
-    rating = db.Column(db.Float)  
+    description = db.Column(db.String(500))
+    rating = db.Column(db.Float)
     summary = db.Column(db.Text)
     borrow_count = db.Column(db.Integer, default=0)  # Number of times the book has been borrowed 
     total_books = db.Column(db.Integer, default=0)  # Total number of copies of the book available

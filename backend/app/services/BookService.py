@@ -6,6 +6,10 @@ from app.model.association_tables import book_author_association, book_category_
 from sqlalchemy.orm import joinedload
 from sqlalchemy.exc import IntegrityError
 from typing import List, Dict, Any, Optional
+import logging
+
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 
 class BookService:
     @staticmethod
