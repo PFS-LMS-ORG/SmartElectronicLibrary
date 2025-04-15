@@ -4,6 +4,7 @@ import axios from "axios";
 import { useAuth } from "../context/AuthContext";
 import { Star, Clock, Users, Book, ChevronLeft } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { toast } from "react-toastify"; // Add react-toastify for notifications
 
 interface Book {
   id: number;
@@ -19,6 +20,12 @@ interface Book {
   available_books: number;
 }
 
+interface RentalRequest {
+  id: number;
+  book_id: number;
+  status: "pending" | "approved" | "rejected";
+}
+
 const BookDetails = () => {
   const { id } = useParams<{ id: string }>();
   const [book, setBook] = useState<Book | null>(null);
@@ -26,7 +33,9 @@ const BookDetails = () => {
   const [loading, setLoading] = useState(true);
   const [relatedLoading, setRelatedLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("overview");
-  const { isAuthenticated, isLoading: isAuthLoading, logout } = useAuth();
+  const [userRequest, setUserRequest] = useState<RentalRequest | null>(null); // Track user's request
+  const [borrowLoading, setBorrowLoading] = useState(false); // Track borrow action
+  const { isAuthenticated, isLoading: isAuthLoading, logout, user } = useAuth();
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -38,26 +47,36 @@ const BookDetails = () => {
       return;
     }
 
-    const fetchBook = async () => {
+    const fetchBookAndRequest = async () => {
       setLoading(true);
       try {
         const token = localStorage.getItem("token");
         if (!token) {
           throw new Error("No token found");
         }
+
+        // Fetch book details
         console.log("Fetching book with token:", token.slice(0, 20) + "...");
-        const response = await axios.get(`/api/books/${id}`, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
+        const bookResponse = await axios.get(`/api/books/${id}`, {
+          headers: { Authorization: `Bearer ${token}` },
         });
-        console.log("Book response:", response.data);
-        setBook(response.data);
-        
-        // After getting book data, fetch related books
-        fetchRelatedBooks(response.data.categories, response.data.id);
+        console.log("Book response:", bookResponse.data);
+        setBook(bookResponse.data);
+
+        // Fetch user's rental request for this book
+        const requestResponse = await axios.get(`/api/rental_requests/my_requests?page=1&per_page=10`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const requests: RentalRequest[] = requestResponse.data.requests;
+        const existingRequest = requests.find(
+          (req: RentalRequest) => req.book_id === Number(id) && req.status !== "rejected"
+        );
+        setUserRequest(existingRequest || null);
+
+        // Fetch related books
+        fetchRelatedBooks(bookResponse.data.categories, bookResponse.data.id);
       } catch (error: any) {
-        console.error("Error fetching book:", error.response?.data || error.message);
+        console.error("Error fetching data:", error.response?.data || error.message);
         if (error.response?.status === 401) {
           console.log("Unauthorized: Logging out and redirecting to login");
           logout();
@@ -69,7 +88,7 @@ const BookDetails = () => {
       }
     };
 
-    fetchBook();
+    fetchBookAndRequest();
   }, [id, isAuthenticated, isAuthLoading, logout, navigate]);
 
   const fetchRelatedBooks = async (categories: string[], bookId: number) => {
@@ -79,15 +98,12 @@ const BookDetails = () => {
       if (!token) {
         throw new Error("No token found");
       }
-      
-      // Assuming the API supports category filtering and exclusion of current book
-      const categoryParams = categories.map(c => `category=${encodeURIComponent(c)}`).join('&');
+
+      const categoryParams = categories.map((c) => `category=${encodeURIComponent(c)}`).join("&");
       const response = await axios.get(`/api/books/related?${categoryParams}&exclude=${bookId}&limit=4`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { Authorization: `Bearer ${token}` },
       });
-      
+
       console.log("Related books response:", response.data);
       setRelatedBooks(response.data);
     } catch (error: any) {
@@ -97,8 +113,44 @@ const BookDetails = () => {
     }
   };
 
-  const handleBorrow = () => {
-    alert("Borrow feature coming soon!");
+  const handleBorrow = async () => {
+    if (!book || borrowLoading) return;
+
+    setBorrowLoading(true);
+    try {
+      const token = localStorage.getItem("token");
+      if (!token) {
+        throw new Error("No token found");
+      }
+
+      const response = await axios.post(
+        "/api/rental_requests",
+        { book_id: book.id },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      console.log("Rental request response:", response.data);
+
+      // Update userRequest state
+      setUserRequest({ id: response.data.id, book_id: book.id, status: "pending" });
+
+      // Optional: Update available_books (if backend doesn't auto-update)
+      setBook((prev) =>
+        prev ? { ...prev, available_books: prev.available_books - 1 } : prev
+      );
+
+      toast.success("Rental request created successfully! Awaiting admin approval.");
+    } catch (error: any) {
+      console.error("Error creating rental request:", error.response?.data || error.message);
+      const errorMsg = error.response?.data?.error || "Failed to create rental request.";
+      toast.error(errorMsg);
+      if (error.response?.status === 401) {
+        logout();
+        localStorage.removeItem("token");
+        navigate("/login");
+      }
+    } finally {
+      setBorrowLoading(false);
+    }
   };
 
   const handleGoBack = () => {
@@ -132,7 +184,7 @@ const BookDetails = () => {
   if (!book) return (
     <div className="min-h-screen bg-gray-900 text-white">
       <div className="container mx-auto px-6 py-12 flex flex-col items-center justify-center">
-        <motion.div 
+        <motion.div
           initial={{ opacity: 0, scale: 0.8 }}
           animate={{ opacity: 1, scale: 1 }}
           className="text-center"
@@ -140,7 +192,7 @@ const BookDetails = () => {
           <Book className="w-20 h-20 text-gray-600 mx-auto mb-6" />
           <h1 className="text-3xl font-bold mb-4">Book Not Found</h1>
           <p className="text-gray-400 mb-8">The book you're looking for doesn't exist or has been removed.</p>
-          <button 
+          <button
             onClick={handleGoBack}
             className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 rounded-lg text-white font-medium transition-colors duration-300"
           >
@@ -171,11 +223,11 @@ const BookDetails = () => {
 
   const tabVariants = {
     hidden: { opacity: 0, y: 20 },
-    visible: { opacity: 1, y: 0, transition: { duration: 0.5 } }
+    visible: { opacity: 1, y: 0, transition: { duration: 0.5 } },
   };
 
   return (
-    <motion.div 
+    <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       className="min-h-screen bg-gray-900 text-white"
@@ -197,14 +249,14 @@ const BookDetails = () => {
         {/* Main Grid Layout */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-12">
           {/* Left Column - Book Cover */}
-          <motion.div 
+          <motion.div
             className="lg:col-span-4 flex flex-col items-center"
             initial={{ opacity: 0, y: 30 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6 }}
           >
             {/* Book Cover with Hover Effect */}
-            <motion.div 
+            <motion.div
               className="relative mb-6 group"
               whileHover={{ scale: 1.03 }}
               transition={{ duration: 0.3, ease: "easeOut" }}
@@ -214,11 +266,12 @@ const BookDetails = () => {
                 alt={book.title}
                 className="w-80 h-auto rounded-xl shadow-2xl object-cover z-10 relative"
               />
-              
               {/* Backdrop glow effect */}
-              <div className={`absolute -inset-2 bg-gradient-to-r ${getGradient()} rounded-xl blur-lg opacity-0 group-hover:opacity-30 transition-opacity duration-500 z-0`}></div>
+              <div
+                className={`absolute -inset-2 bg-gradient-to-r ${getGradient()} rounded-xl blur-lg opacity-0 group-hover:opacity-30 transition-opacity duration-500 z-0`}
+              ></div>
             </motion.div>
-            
+
             {/* Book Stats */}
             <motion.div
               initial={{ opacity: 0 }}
@@ -248,30 +301,53 @@ const BookDetails = () => {
                 <span className="text-xs text-gray-400">Borrowed</span>
               </div>
             </motion.div>
-            
+
             {/* Borrow Button */}
             <motion.button
-              className="mt-6 w-full max-w-sm py-4 px-6 rounded-lg font-medium text-lg relative overflow-hidden group"
+              className={`mt-6 w-full max-w-sm py-4 px-6 rounded-lg font-medium text-lg relative overflow-hidden group ${
+                book.available_books === 0 || userRequest || borrowLoading
+                  ? "bg-gray-600 cursor-not-allowed"
+                  : ""
+              }`}
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ delay: 0.4, duration: 0.6 }}
               onClick={handleBorrow}
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
+              whileHover={{ scale: book.available_books === 0 || userRequest || borrowLoading ? 1 : 1.02 }}
+              whileTap={{ scale: book.available_books === 0 || userRequest || borrowLoading ? 1 : 0.98 }}
+              disabled={book.available_books === 0 || !!userRequest || borrowLoading}
             >
               {/* Button background with gradient */}
-              <div className={`absolute inset-0 bg-gradient-to-r ${getGradient()} transition-transform duration-500`}></div>
-              
+              <div
+                className={`absolute inset-0 bg-gradient-to-r ${
+                  book.available_books === 0 || userRequest || borrowLoading ? "bg-gray-600" : getGradient()
+                } transition-transform duration-500`}
+              ></div>
+
               {/* Button hover animation */}
-              <div className="absolute inset-0 opacity-0 group-hover:opacity-30 bg-white transition-opacity duration-500"></div>
-              
+              <div
+                className={`absolute inset-0 opacity-0 ${
+                  book.available_books === 0 || userRequest || borrowLoading ? "" : "group-hover:opacity-30"
+                } bg-white transition-opacity duration-500`}
+              ></div>
+
               {/* Button text */}
-              <span className="relative z-10">Borrow Now</span>
+              <span className="relative z-10">
+                {borrowLoading
+                  ? "Requesting..."
+                  : userRequest
+                  ? userRequest.status === "pending"
+                    ? "Request Pending"
+                    : "Book Borrowed"
+                  : book.available_books === 0
+                  ? "Not Available"
+                  : "Borrow Now"}
+              </span>
             </motion.button>
           </motion.div>
-          
+
           {/* Right Column - Book Details */}
-          <motion.div 
+          <motion.div
             className="lg:col-span-8"
             initial={{ opacity: 0, y: 30 }}
             animate={{ opacity: 1, y: 0 }}
@@ -281,7 +357,6 @@ const BookDetails = () => {
             <h1 className="text-4xl sm:text-5xl font-extrabold mb-4 leading-tight">
               {book.title}
             </h1>
-            
             {/* Authors in stylish boxes */}
             <div className="flex flex-wrap gap-2 mb-6">
               {book.authors.map((author, index) => (
@@ -297,7 +372,6 @@ const BookDetails = () => {
                 </motion.div>
               ))}
             </div>
-            
             {/* Categories */}
             <div className="mb-8">
               <div className="flex flex-wrap gap-2 mt-2">
@@ -315,19 +389,20 @@ const BookDetails = () => {
                 ))}
               </div>
             </div>
-            
             {/* Tab Navigation */}
             <div className="border-b border-gray-700/50 mb-6">
               <div className="flex space-x-6">
                 {["overview", "summary", "details"].map((tab) => (
                   <button
                     key={tab}
-                    className={`pb-3 px-2 relative ${activeTab === tab ? 'text-white font-medium' : 'text-gray-400 hover:text-gray-200'} transition-colors duration-300 capitalize`}
+                    className={`pb-3 px-2 relative ${
+                      activeTab === tab ? "text-white font-medium" : "text-gray-400 hover:text-gray-200"
+                    } transition-colors duration-300 capitalize`}
                     onClick={() => setActiveTab(tab)}
                   >
                     {tab}
                     {activeTab === tab && (
-                      <motion.div 
+                      <motion.div
                         layoutId="activeTab"
                         className={`absolute bottom-0 left-0 right-0 h-0.5 bg-gradient-to-r ${getGradient()}`}
                       ></motion.div>
@@ -336,7 +411,6 @@ const BookDetails = () => {
                 ))}
               </div>
             </div>
-            
             {/* Tab Content */}
             <div className="min-h-56">
               <AnimatePresence mode="wait">
@@ -354,7 +428,6 @@ const BookDetails = () => {
                     </p>
                   </motion.div>
                 )}
-                
                 {activeTab === "summary" && (
                   <motion.div
                     key="summary"
@@ -371,7 +444,6 @@ const BookDetails = () => {
                     </div>
                   </motion.div>
                 )}
-                
                 {activeTab === "details" && (
                   <motion.div
                     key="details"
@@ -405,8 +477,8 @@ const BookDetails = () => {
                 )}
               </AnimatePresence>
             </div>
-            
-            {/* Similar Books Section - Now fetches related books by categories */}
+
+            {/* Similar Books Section */}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
@@ -415,7 +487,6 @@ const BookDetails = () => {
             >
               <h3 className="text-xl font-medium mb-6">You might also like</h3>
               {relatedLoading ? (
-                // Loading skeleton for related books
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
                   {[1, 2, 3, 4].map((i) => (
                     <div key={i} className="bg-gray-800/40 rounded-lg overflow-hidden animate-pulse">
@@ -428,17 +499,16 @@ const BookDetails = () => {
                   ))}
                 </div>
               ) : relatedBooks.length > 0 ? (
-                // Display related books
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
                   {relatedBooks.map((relatedBook) => (
-                    <motion.div 
+                    <motion.div
                       key={relatedBook.id}
                       whileHover={{ y: -5 }}
                       className="bg-gray-800/40 rounded-lg overflow-hidden cursor-pointer"
                       onClick={() => navigateToBook(relatedBook.id)}
                     >
                       <div className="h-48 bg-gray-700 relative">
-                        <img 
+                        <img
                           src={relatedBook.cover_url}
                           alt={relatedBook.title}
                           className="w-full h-full object-cover absolute inset-0"
@@ -454,7 +524,6 @@ const BookDetails = () => {
                   ))}
                 </div>
               ) : (
-                // No related books found
                 <div className="bg-gray-800/40 rounded-lg p-6 text-center">
                   <p className="text-gray-400">No related books found.</p>
                 </div>

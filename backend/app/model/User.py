@@ -13,6 +13,15 @@ class User(db.Model):
     role = db.Column(db.String(10), default='user')
 
     rentals = db.relationship('Rental', back_populates='user')
+    rental_requests = db.relationship('RentalRequest', back_populates='user')
+
+    def set_password(self, password):
+        """Hash and set the user's password."""
+        self.password_hash = bcrypt.generate_password_hash(password).decode('utf-8')
+
+    def check_password(self, password):
+        """Verify the provided password against the stored hash."""
+        return bcrypt.check_password_hash(self.password_hash, password)
 
     def set_password(self, password):
         """Hash and set the user's password."""
@@ -24,3 +33,13 @@ class User(db.Model):
 
     def __repr__(self):
         return f"<User {self.name} ({self.email})>"
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'name': self.name,
+            'email': self.email,
+            'role': self.role,
+            'rentals': [rental.to_dict() for rental in self.rentals],
+            'rental_requests': [request.to_dict() for request in self.rental_requests]
+        } if self else None
