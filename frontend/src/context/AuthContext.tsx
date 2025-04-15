@@ -36,7 +36,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         try {
           const userData = await getCurrentUser();
           console.log('User fetched:', userData);
-          setUser(userData);
+          const transformedUser = {
+            ...userData,
+            role: userData.role as 'user' | 'admin', // Ensure role matches the expected type
+          };
+          setUser(transformedUser);
           setIsAuthenticated(true);
         } catch (error) {
           console.error('Failed to fetch user:', error);
@@ -58,7 +62,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     console.log('Logging in:', email);
     const { user } = await login({ email, password });
     console.log('Login successful, user:', user);
-    setUser(user);
+    setUser({
+      ...user,
+      role: user.role as 'user' | 'admin', // Ensure role matches the expected type
+    });
     setIsAuthenticated(true);
   };
 
