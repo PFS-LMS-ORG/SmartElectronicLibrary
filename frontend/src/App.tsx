@@ -1,4 +1,7 @@
+// App.tsx
 import { Routes, Route } from 'react-router-dom';
+import { ToastContainer } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
 import { AuthProvider } from './context/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import Home from './pages/Home';
@@ -9,7 +12,12 @@ import BackgroundWrapper from './components/ui/BackgroundWrapper';
 import LibraryLoginPage from './pages/LibraryLoginPage';
 import LibraryRegistrationPage from './pages/LibraryRegistrationPage';
 import BookDetails from './pages/BookDetails';
-import Product from './pages/Product';
+import AdminDashboard from './pages/admin/AdminDashboard';
+import BooksPage from './pages/admin/Books';
+import UsersTable from './pages/admin/Users';
+import EditBookPage from './pages/admin/EditBook';
+import AdminRequestsPage from './pages/admin/Requests';
+import AdminRentalsPage from './pages/admin/AdminRentalsPage';
 
 function App() {
   return (
@@ -52,15 +60,56 @@ function App() {
             }
           />
           <Route
-            path="/product"
+            path="/admin"
             element={
-              <ProtectedRoute>
-                <Product />
+            <ProtectedRoute requiredRole="admin">
+              <AdminDashboard />
+            </ProtectedRoute>}
+          />
+          <Route
+            path="/admin/users"
+            element={
+              <ProtectedRoute requiredRole="admin">
+                <UsersTable />
               </ProtectedRoute>
             }
           />
+          <Route
+            path="/admin/books"
+            element={
+              <ProtectedRoute requiredRole="admin">
+                <BooksPage/>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/edit/:id"
+            element={
+              <ProtectedRoute requiredRole="admin">
+                <EditBookPage/>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/requests"
+            element={
+              <ProtectedRoute requiredRole="admin">
+                <AdminRequestsPage/>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/rentals"
+            element={
+              <ProtectedRoute requiredRole="admin">
+                <AdminRentalsPage/>
+              </ProtectedRoute>
+            }
+          />
+
           <Route path="*" element={<div className="container mx-auto px-8 py-8 text-white">Page Not Found</div>} />
         </Routes>
+        <ToastContainer position="top-right" autoClose={3000} />
       </BackgroundWrapper>
     </AuthProvider>
   );
