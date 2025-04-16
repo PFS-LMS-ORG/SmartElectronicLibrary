@@ -1,5 +1,18 @@
 import { useState, useEffect } from 'react';
 import Layout from '@/components/layout/layout';
+import { 
+  ChevronRight, 
+  Book, 
+  Users, 
+  Library,
+  MoreHorizontal, 
+  TrendingDown, 
+  TrendingUp,
+  Search,
+  Plus,
+  UserCheck
+} from 'lucide-react';
+import { useAuth } from '@/context/AuthContext';
 
 // Define types based on your models
 type Author = {
@@ -52,7 +65,62 @@ type User = {
   initials?: string;
 };
 
+// Helper function to format dates
+const formatDate = (dateStr: string): string => {
+  const date = new Date(dateStr);
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    day: 'numeric'
+  }).format(date);
+};
+
+// Component for user avatar
+const UserAvatar = ({ user }: { user: User }) => {
+  const colorVariants = [
+    'bg-indigo-900/30 text-indigo-400',
+    'bg-purple-900/30 text-purple-400',
+    'bg-blue-900/30 text-blue-400',
+    'bg-green-900/30 text-green-400',
+  ];
+  
+  const colorIndex = user.id % colorVariants.length;
+  const bgColorClass = user.avatar ? '' : colorVariants[colorIndex];
+  
+  return (
+    <div className={`flex-shrink-0 w-10 h-10 rounded-full ${bgColorClass} flex items-center justify-center overflow-hidden`}>
+      {user.avatar ? (
+        <img src={user.avatar} alt={user.name} className="w-full h-full object-cover" />
+      ) : (
+        <span className="text-sm font-medium">{user.initials || user.name.split(' ').map(n => n[0]).join('')}</span>
+      )}
+    </div>
+  );
+};
+
+// Component for book cover
+const BookCover = ({ book }: { book: Book }) => {
+  return (
+    <div className="flex-shrink-0 w-12 h-16 bg-gray-800 rounded-md overflow-hidden shadow group-hover:shadow-md transition-shadow duration-200">
+      {book?.cover_url ? (
+        <img 
+          src={book.cover_url} 
+          alt={book.title} 
+          className="w-full h-full object-cover" 
+        />
+      ) : (
+        <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-indigo-900 to-indigo-800">
+          <Book size={20} className="text-indigo-300" />
+        </div>
+      )}
+    </div>
+  );
+};
+
 const AdminDashboard = () => {
+
+  // Get the current authenticated user
+  const { user } = useAuth();
+
   // States for data
   const [borrowRequests, setBorrowRequests] = useState<RentalRequest[]>([]);
   const [rentals, setRentals] = useState<Rental[]>([]);
@@ -151,15 +219,8 @@ const AdminDashboard = () => {
     const fetchBorrowRequests = async () => {
       try {
         setLoadingBorrowRequests(true);
-        setErrorBorrowRequests(null);
-
         const token = localStorage.getItem('token');
-        if (!token) {
-          throw new Error('No authentication token found');
-        }
-
         const response = await fetch('/api/rental_requests/pending', {
-          method: 'GET',
           headers: {
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json',
@@ -167,27 +228,11 @@ const AdminDashboard = () => {
         });
         
         if (!response.ok) {
-          if (response.status === 403) {
-            throw new Error('Admin access required');
-          }
           throw new Error(`HTTP error! Status: ${response.status}`);
         }
         
         const result = await response.json();
-        console.log('Borrow requests data:', result);
-
-        // Verify response structure
-        if (!result.requests || !Array.isArray(result.requests)) {
-          throw new Error('Invalid response format: Expected { requests: [...] }');
-        }
-
-        setBorrowRequests(result.requests);
-
-        // Debug logs
-        console.log('Borrow requests type:', typeof result.requests, Array.isArray(result.requests), result.requests.length);
-        if (result.requests.length > 0) {
-          console.log('First borrow request:', result.requests[0]);
-        }
+        setBorrowRequests(result.requests || []);
       } catch (error) {
         console.error('Error fetching borrow requests:', error);
         setErrorBorrowRequests(error instanceof Error ? error.message : 'An unknown error occurred');
@@ -211,7 +256,6 @@ const AdminDashboard = () => {
         }
         
         const result = await response.json();
-        console.log('Rentals data:', result);
         setRentals(result);
         
         // Update borrowed books count
@@ -235,15 +279,8 @@ const AdminDashboard = () => {
     const fetchBooks = async () => {
       try {
         setLoadingBooks(true);
-        setErrorBooks(null);
-
         const token = localStorage.getItem('token');
-        if (!token) {
-          throw new Error('No authentication token found');
-        }
-
         const response = await fetch('/api/books', {
-          method: 'GET',
           headers: {
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json',
@@ -251,18 +288,13 @@ const AdminDashboard = () => {
         });
         
         if (!response.ok) {
-          if (response.status === 401) {
-            throw new Error('Unauthorized access');
-          }
           throw new Error(`HTTP error! Status: ${response.status}`);
         }
         
         const result = await response.json();
-        console.log('Books data:', result);
-
-        // Verify response structure
+        
         if (!result.books || !Array.isArray(result.books)) {
-          throw new Error('Invalid response format: Expected { books: [...] }');
+          throw new Error('Invalid response format');
         }
         
         setBooks(result.books);
@@ -275,7 +307,7 @@ const AdminDashboard = () => {
       } catch (error) {
         console.error('Error fetching books:', error);
         setErrorBooks(error instanceof Error ? error.message : 'An unknown error occurred');
-        setBooks([]); // Reset to empty array on error
+        setBooks([]);
       } finally {
         setLoadingBooks(false);
       }
@@ -286,218 +318,272 @@ const AdminDashboard = () => {
 
   // Get the most recently added books
   const getRecentlyAddedBooks = (): Book[] => {
-    // Ensure books is an array
     if (!Array.isArray(books)) {
-      console.warn('books is not an array:', books);
       return [];
     }
 
-    // Sort books by created_at date in descending order
     return [...books]
-      .sort((a, b) => {
-        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-      })
-      .slice(0, 6); // Get the 6 most recent books
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+      .slice(0, 6);
   };
 
   const recentlyAddedBooks = getRecentlyAddedBooks();
-
-  console.log(borrowRequests[0]?.book);
 
   return (
     <Layout>
       <div className="p-6">
         {/* Welcome Header */}
         <div className="mb-6">
-          <h1 className="text-lg text-gray-600">Welcome, Adrian</h1>
-          <p className="text-sm text-gray-500">Monitor all of your projects and tasks here</p>
+          <h1 className="text-xl font-bold text-gray-100">Welcome, {user?.name || 'Admin'}</h1>
+          <p className="text-sm text-gray-400">Monitor all of your users and tasks here</p>
         </div>
 
         {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-          <div className="bg-white p-4 rounded-lg shadow">
-            <div className="flex justify-between items-start mb-2">
-              <h2 className="text-sm font-medium text-gray-500">Borrowed Books</h2>
-              <span className="text-red-500 flex items-center text-xs">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" viewBox="0 0 20 20" fill="currentColor">
-                  <path fillRule="evenodd" d="M16.707 10.293a1 1 0 010 1.414l-6 6a1 1 0 01-1.414 0l-6-6a1 1 0 111.414-1.414L9 14.586V3a1 1 0 012 0v11.586l4.293-4.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                </svg>
-                2
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+          <div className="bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-700">
+            <div className="flex justify-between items-start mb-4">
+              <div className="flex items-center">
+                <div className="p-2 bg-red-900/30 rounded-lg mr-3">
+                  <Book size={20} className="text-red-400" />
+                </div>
+                <h2 className="text-sm font-medium text-gray-300">Borrowed Books</h2>
+              </div>
+              <span className="flex items-center text-xs font-medium text-red-400">
+                <TrendingUp size={16} className="mr-1" />
+                12%
               </span>
             </div>
-            <h3 className="text-3xl font-bold">{loadingRentals ? '...' : stats.borrowedBooks}</h3>
+            <div className="flex items-end justify-between">
+              <h3 className="text-3xl font-bold text-gray-100">
+                {loadingRentals ? '...' : stats.borrowedBooks}
+              </h3>
+              <div className="text-xs text-gray-400">
+                From total of {stats.totalBooks || '...'} books
+              </div>
+            </div>
           </div>
           
-          <div className="bg-white p-4 rounded-lg shadow">
-            <div className="flex justify-between items-start mb-2">
-              <h2 className="text-sm font-medium text-gray-500">Total Users</h2>
-              <span className="text-green-500 flex items-center text-xs">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" viewBox="0 0 20 20" fill="currentColor">
-                  <path fillRule="evenodd" d="M3.293 9.707a1 1 0 010-1.414l6-6a1 1 0 011.414 0l6 6a1 1 0 01-1.414 1.414L11 5.414V17a1 1 0 11-2 0V5.414L4.707 9.707a1 1 0 01-1.414 0z" clipRule="evenodd" />
-                </svg>
-                4
+          <div className="bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-700">
+            <div className="flex justify-between items-start mb-4">
+              <div className="flex items-center">
+                <div className="p-2 bg-blue-900/30 rounded-lg mr-3">
+                  <Users size={20} className="text-blue-400" />
+                </div>
+                <h2 className="text-sm font-medium text-gray-300">Total Users</h2>
+              </div>
+              <span className="flex items-center text-xs font-medium text-green-400">
+                <TrendingUp size={16} className="mr-1" />
+                8%
               </span>
             </div>
-            <h3 className="text-3xl font-bold">{stats.totalUsers}</h3>
+            <div className="flex items-end justify-between">
+              <h3 className="text-3xl font-bold text-gray-100">
+                {stats.totalUsers || '...'}
+              </h3>
+              <div className="text-xs text-gray-400">
+                {accountRequests.length} new requests
+              </div>
+            </div>
           </div>
           
-          <div className="bg-white p-4 rounded-lg shadow">
-            <div className="flex justify-between items-start mb-2">
-              <h2 className="text-sm font-medium text-gray-500">Total Books</h2>
-              <span className="text-green-500 flex items-center text-xs">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" viewBox="0 0 20 20" fill="currentColor">
-                  <path fillRule="evenodd" d="M3.293 9.707a1 1 0 010-1.414l6-6a1 1 0 011.414 0l6 6a1 1 0 01-1.414 1.414L11 5.414V17a1 1 0 11-2 0V5.414L4.707 9.707a1 1 0 01-1.414 0z" clipRule="evenodd" />
-                </svg>
-                2
+          <div className="bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-700">
+            <div className="flex justify-between items-start mb-4">
+              <div className="flex items-center">
+                <div className="p-2 bg-purple-900/30 rounded-lg mr-3">
+                  <Library size={20} className="text-purple-400" />
+                </div>
+                <h2 className="text-sm font-medium text-gray-300">Total Books</h2>
+              </div>
+              <span className="flex items-center text-xs font-medium text-green-400">
+                <TrendingUp size={16} className="mr-1" />
+                4%
               </span>
             </div>
-            <h3 className="text-3xl font-bold">{loadingBooks ? '...' : stats.totalBooks}</h3>
+            <div className="flex items-end justify-between">
+              <h3 className="text-3xl font-bold text-gray-100">
+                {loadingBooks ? '...' : stats.totalBooks}
+              </h3>
+              <div className="text-xs text-gray-400">
+                {recentlyAddedBooks.length} recently added
+              </div>
+            </div>
           </div>
         </div>
 
         {/* Borrow Requests */}
         <div className="mb-8">
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-lg font-semibold">Borrow Requests</h2>
-            <a href="#" className="text-blue-600 text-sm">View all</a>
+          <div className="flex justify-between items-center mb-5">
+            <h2 className="text-xl font-bold text-gray-200">Borrow Requests</h2>
+            <a href="#" className="flex items-center text-indigo-400 text-sm font-medium hover:text-indigo-300 transition-colors">
+              View all
+              <ChevronRight size={16} className="ml-1" />
+            </a>
           </div>
           
-          <div className="space-y-4">
+          <div className="bg-gray-800 rounded-xl shadow-sm overflow-hidden border border-gray-700">
             {loadingBorrowRequests ? (
-              <div className="text-center py-4">Loading borrow requests...</div>
+              <div className="p-8 flex justify-center">
+                <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-indigo-400"></div>
+              </div>
             ) : errorBorrowRequests ? (
-              <div className="text-center py-4 text-red-500">Error: {errorBorrowRequests}</div>
+              <div className="text-center py-8">
+                <div className="text-red-400 mb-2">⚠️</div>
+                <div className="text-gray-300">Error: {errorBorrowRequests}</div>
+              </div>
             ) : borrowRequests.length > 0 ? (
-              borrowRequests.map((request) => (
-                <div key={request.id} className="bg-white p-4 rounded-lg shadow flex items-center justify-between">
-                  <div className="flex items-center">
-                    <div className="w-12 h-16 bg-gray-200 rounded mr-4 overflow-hidden">
-                      {request.book?.cover_url ? (
-                        <img 
-                          src={request.book.cover_url} 
-                          alt={request.book.title} 
-                          className="w-full h-full object-cover" 
-                        />
-                      ) : (
-                        <div className="w-full h-full bg-indigo-100"></div>
-                      )}
-                    </div>
-                    <div>
-                      <h3 className="font-medium text-sm">{request.book?.title || "Untitled Book"}</h3>
-                      <p className="text-xs text-gray-500">
-                        By {request.book?.authors?.toString() || "Unknown Author"} • 
-                        {request.book?.categories?.toString() || "Uncategorized"}
-                      </p>
-                      <div className="flex items-center mt-1">
-                        <div className="w-5 h-5 rounded-full bg-gray-300 flex items-center justify-center overflow-hidden mr-1">
-                          <span className="text-xs">
-                            {request.user?.name ? request.user.name.split(' ').map(n => n[0]).join('') : "U"}
-                          </span>
+              <div className="divide-y divide-gray-700">
+                {borrowRequests.map((request) => (
+                  <div key={request.id} className="p-5 flex items-center justify-between group hover:bg-gray-750 transition-colors">
+                    <div className="flex items-center space-x-4">
+                      <BookCover book={request.book} />
+                      <div>
+                        <h3 className="font-semibold text-gray-100">
+                          {request.book?.title || "Untitled Book"}
+                        </h3>
+                        <p className="text-sm text-gray-400">
+                          By {request.book?.authors?.join(', ') || "Unknown Author"} • 
+                          {request.book?.categories?.join(', ') || "Uncategorized"}
+                        </p>
+                        <div className="flex items-center mt-2">
+                          <UserAvatar user={request.user} />
+                          <div className="ml-2">
+                            <p className="text-sm font-medium text-gray-300">{request.user?.name || "Unknown User"}</p>
+                            <p className="text-xs text-gray-400">
+                              Requested on {formatDate(request.requested_at)}
+                            </p>
+                          </div>
                         </div>
-                        <span className="text-xs text-gray-500">{request.user?.name || "Unknown User"}</span>
-                        <span className="text-xs text-gray-400 ml-2">
-                          {new Date(request.requested_at).toLocaleDateString()}
-                        </span>
                       </div>
                     </div>
+                    <button className="p-2 rounded-full text-gray-400 hover:bg-gray-700 transition-colors">
+                      <MoreHorizontal size={18} />
+                    </button>
                   </div>
-                  <button className="text-gray-400">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                      <path d="M6 10a2 2 0 11-4 0 2 2 0 014 0zM12 10a2 2 0 11-4 0 2 2 0 014 0zM16 12a2 2 0 100-4 2 2 0 000 4z" />
-                    </svg>
-                  </button>
-                </div>
-              ))
+                ))}
+              </div>
             ) : (
-              <div className="text-center py-4">No borrow requests found</div>
+              <div className="text-center py-12">
+                <div className="mb-3 bg-gray-700 rounded-full p-3 inline-flex">
+                  <Book size={24} className="text-gray-400" />
+                </div>
+                <h3 className="text-lg font-medium text-gray-200 mb-1">No borrow requests</h3>
+                <p className="text-gray-400">All book requests have been processed.</p>
+              </div>
             )}
           </div>
         </div>
 
         {/* Two Column Layout for Recently Added Books and Account Requests */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           {/* Recently Added Books */}
           <div>
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-lg font-semibold">Recently Added Books</h2>
-              <a href="#" className="text-blue-600 text-sm">View all</a>
+            <div className="flex justify-between items-center mb-5">
+              <h2 className="text-xl font-bold text-gray-200">Recently Added Books</h2>
+              <a href="#" className="flex items-center text-indigo-400 text-sm font-medium hover:text-indigo-300 transition-colors">
+                View all
+                <ChevronRight size={16} className="ml-1" />
+              </a>
             </div>
             
-            <div className="bg-white rounded-lg shadow p-4">
-              <div className="flex items-center justify-center border-2 border-dashed border-gray-300 rounded-lg p-4 mb-4 hover:bg-gray-50 cursor-pointer">
-                <div className="flex items-center text-gray-500">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
-                    <path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" />
-                  </svg>
-                  <span>Add New Book</span>
+            <div className="bg-gray-800 rounded-xl shadow-sm border border-gray-700 p-5">
+              <button className="w-full flex items-center justify-center border-2 border-dashed border-gray-600 rounded-lg p-4 mb-5 hover:bg-gray-700 transition-colors group">
+                <div className="flex items-center text-gray-400 group-hover:text-indigo-400 transition-colors">
+                  <Plus size={18} className="mr-2" />
+                  <span className="font-medium">Add New Book</span>
                 </div>
-              </div>
+              </button>
               
-              <div className="space-y-4">
-                {loadingBooks ? (
-                  <div className="text-center py-4">Loading books...</div>
-                ) : errorBooks ? (
-                  <div className="text-center py-4 text-red-500">Error: {errorBooks}</div>
-                ) : recentlyAddedBooks.length > 0 ? (
-                  recentlyAddedBooks.map((book) => (
-                    <div key={book.id} className="flex items-center">
-                      <div className="w-12 h-16 bg-gray-200 rounded mr-4 overflow-hidden">
-                        {book.cover_url ? (
-                          <img 
-                            src={book.cover_url} 
-                            alt={book.title} 
-                            className="w-full h-full object-cover" 
-                          />
-                        ) : (
-                          <div className="w-full h-full bg-indigo-100"></div>
-                        )}
-                      </div>
-                      <div>
-                        <h3 className="font-medium text-sm">{book.title}</h3>
-                        <p className="text-xs text-gray-500">
-                          By {book.authors?.join(', ') || "Unknown Author"} • 
-                          {book.categories?.join(', ') || "Uncategorized"}
-                        </p>
-                        <p className="text-xs text-gray-400 mt-1">
-                          {new Date(book.created_at).toLocaleDateString()}
-                        </p>
+              {loadingBooks ? (
+                <div className="space-y-4">
+                  {[...Array(3)].map((_, index) => (
+                    <div key={index} className="animate-pulse flex space-x-4">
+                      <div className="bg-gray-700 rounded w-12 h-16"></div>
+                      <div className="flex-1 space-y-2 py-1">
+                        <div className="h-4 bg-gray-700 rounded w-3/4"></div>
+                        <div className="h-4 bg-gray-700 rounded w-1/2"></div>
                       </div>
                     </div>
-                  ))
-                ) : (
-                  <div className="text-center py-4">No books found</div>
-                )}
-              </div>
+                  ))}
+                </div>
+              ) : errorBooks ? (
+                <div className="text-center py-8">
+                  <div className="text-red-400 mb-2">⚠️</div>
+                  <div className="text-gray-300">Error: {errorBooks}</div>
+                </div>
+              ) : recentlyAddedBooks.length > 0 ? (
+                <div className="space-y-4">
+                  {recentlyAddedBooks.map((book) => (
+                    <div key={book.id} className="flex items-center p-2 rounded-lg hover:bg-gray-700 transition-colors group">
+                      <BookCover book={book} />
+                      <div className="ml-4">
+                        <h3 className="font-medium text-gray-200">{book.title}</h3>
+                        <p className="text-sm text-gray-400">
+                          By {book.authors?.join(', ') || "Unknown Author"}
+                        </p>
+                        <div className="flex items-center mt-1">
+                          <span className="text-xs text-gray-400 bg-gray-700 px-2 py-0.5 rounded">
+                            {book.categories?.[0] || "Uncategorized"}
+                          </span>
+                          <span className="mx-2 text-gray-600">•</span>
+                          <span className="text-xs text-gray-400">
+                            Added {formatDate(book.created_at)}
+                          </span>
+                        </div>
+                      </div>
+                      <button className="ml-auto p-2 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-gray-200 transition-opacity">
+                        <MoreHorizontal size={16} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-8">
+                  <div className="bg-gray-700 rounded-full p-3 inline-flex mb-3">
+                    <Book size={24} className="text-gray-400" />
+                  </div>
+                  <h3 className="font-medium text-gray-200 mb-1">No books found</h3>
+                  <p className="text-gray-400">Add your first book to get started</p>
+                </div>
+              )}
             </div>
           </div>
           
           {/* Account Requests */}
           <div>
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-lg font-semibold">Account Requests</h2>
-              <a href="#" className="text-blue-600 text-sm">View all</a>
+            <div className="flex justify-between items-center mb-5">
+              <h2 className="text-xl font-bold text-gray-200">Account Requests</h2>
+              <a href="#" className="flex items-center text-indigo-400 text-sm font-medium hover:text-indigo-300 transition-colors">
+                View all
+                <ChevronRight size={16} className="ml-1" />
+              </a>
             </div>
             
-            <div className="bg-white rounded-lg shadow p-4">
-              <div className="grid grid-cols-3 gap-4">
+            <div className="bg-gray-800 rounded-xl shadow-sm border border-gray-700 p-5">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
                 {accountRequests.map(user => (
-                  <div key={user.id} className="flex flex-col items-center">
-                    <div className="w-16 h-16 rounded-full bg-gray-200 flex items-center justify-center mb-2 overflow-hidden">
-                      {user.avatar ? (
-                        <img src={user.avatar} alt={user.name} className="w-full h-full object-cover" />
-                      ) : (
-                        <div className={`w-full h-full flex items-center justify-center ${
-                          user.initials === 'SD' ? 'bg-purple-200 text-purple-600' : 
-                          user.initials === 'RR' ? 'bg-yellow-200 text-yellow-600' :
-                          user.initials === 'IW' ? 'bg-green-200 text-green-600' :
-                          'bg-gray-200 text-gray-600'
-                        }`}>
+                  <div 
+                    key={user.id} 
+                    className="flex flex-col items-center p-4 rounded-lg hover:bg-gray-700 transition-colors border border-gray-700"
+                  >
+                    <div className="mb-3 relative">
+                      <div className={
+                        user.id % 4 === 0 ? 'bg-indigo-900/30 text-indigo-400' :
+                        user.id % 4 === 1 ? 'bg-purple-900/30 text-purple-400' :
+                        user.id % 4 === 2 ? 'bg-blue-900/30 text-blue-400' :
+                        'bg-green-900/30 text-green-400'
+                      + ' w-16 h-16 rounded-full flex items-center justify-center overflow-hidden'}>
+                        {user.avatar ? (
+                          <img src={user.avatar} alt={user.name} className="w-full h-full object-cover" />
+                        ) : (
                           <span className="text-lg font-medium">{user.initials || user.name.split(' ').map(n => n[0]).join('')}</span>
-                        </div>
-                      )}
+                        )}
+                      </div>
+                      <div className="absolute -bottom-1 -right-1 bg-gray-700 rounded-full p-1">
+                        <div className="bg-green-500 w-3 h-3 rounded-full"></div>
+                      </div>
                     </div>
-                    <h3 className="text-sm font-medium text-center">{user.name}</h3>
-                    <p className="text-xs text-gray-500 text-center truncate w-full">{user.email}</p>
+                    <h3 className="text-sm font-medium text-gray-200 text-center">{user.name}</h3>
+                    <p className="text-xs text-gray-400 text-center truncate w-full">{user.email}</p>
                   </div>
                 ))}
               </div>
