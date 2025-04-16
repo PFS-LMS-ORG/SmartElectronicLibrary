@@ -1,6 +1,23 @@
-import React, { useState, useEffect } from 'react';
-import Layout from '@/components/layout/layout';
+import React, { useState, useEffect, FormEvent } from 'react';
 import { format } from 'date-fns';
+import { BookOpen, Calendar, User, Search, Download, Trash2, Eye, Edit, CheckCircle, X, ChevronLeft, ChevronRight } from 'lucide-react';
+import Layout from '@/components/layout/layout';
+import { motion } from 'framer-motion';
+
+// Types
+interface User {
+  id: number;
+  name: string;
+  email: string;
+}
+
+interface Book {
+  id: number;
+  title: string;
+  cover_url: string;
+  authors: string[];
+  categories: string[];
+}
 
 interface Rental {
   id: number;
@@ -8,18 +25,8 @@ interface Rental {
   book_id: number;
   rented_at: string;
   returned_at: string | null;
-  user: {
-    id: number;
-    name: string;
-    email: string;
-  } | null;
-  book: {
-    id: number;
-    title: string;
-    cover_url: string;
-    authors: string[];
-    categories: string[];
-  } | null;
+  user: User | null;
+  book: Book | null;
 }
 
 interface RentalsResponse {
@@ -28,6 +35,233 @@ interface RentalsResponse {
   total_pages: number;
 }
 
+// Reusable Components
+const LoadingSpinner = () => (
+  <div className="flex justify-center items-center py-16">
+    <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-purple-500"></div>
+  </div>
+);
+
+const ErrorMessage = ({ message }: { message: string }) => (
+  <div className="mx-6 mt-4 bg-red-900/50 border border-red-700 text-red-200 px-4 py-3 rounded-lg">
+    <div className="flex">
+      <X className="h-5 w-5 text-red-400" />
+      <p className="ml-3 text-sm">{message}</p>
+    </div>
+  </div>
+);
+
+const ToastNotification = ({ message, type, onClose }: { message: string; type: 'success' | 'error'; onClose: () => void }) => (
+  <motion.div
+    className={`fixed top-4 right-4 p-4 rounded-lg shadow-2xl z-50 flex items-center ${
+      type === 'success' ? 'bg-green-900/90 text-green-100 border border-green-700' : 'bg-red-900/90 text-red-100 border border-red-700'
+    }`}
+    initial={{ opacity: 0, x: 50 }}
+    animate={{ opacity: 1, x: 0 }}
+    exit={{ opacity: 0, x: 50 }}
+  >
+    {type === 'success' ? <CheckCircle className="h-5 w-5 text-green-400 mr-3" /> : <X className="h-5 w-5 text-red-400 mr-3" />}
+    <p>{message}</p>
+  </motion.div>
+);
+
+const Pagination = ({ page, totalPages, onPageChange }: { page: number; totalPages: number; onPageChange: (newPage: number) => void }) => {
+  const getPageNumbers = () => {
+    if (totalPages <= 5) return Array.from({ length: totalPages }, (_, i) => i + 1);
+    if (page <= 3) return [1, 2, 3, 4, 5];
+    if (page >= totalPages - 2) return [totalPages - 4, totalPages - 3, totalPages - 2, totalPages - 1, totalPages];
+    return [page - 2, page - 1, page, page + 1, page + 2];
+  };
+
+  return (
+    <div className="px-6 py-4 flex items-center justify-between border-t border-gray-700">
+      <button
+        onClick={() => onPageChange(page - 1)}
+        disabled={page === 1}
+        className="flex items-center px-4 py-2 text-sm font-medium rounded-md bg-gray-700 border border-gray-600 text-gray-200 hover:bg-gray-600 disabled:bg-gray-800 disabled:text-gray-500 disabled:border-gray-700 disabled:cursor-not-allowed transition-colors"
+      >
+        <ChevronLeft className="h-4 w-4 mr-1" />
+        Previous
+      </button>
+      <div className="flex items-center">
+        {getPageNumbers().map((pageNum) => (
+          <button
+            key={pageNum}
+            onClick={() => onPageChange(pageNum)}
+            className={`mx-1 px-3 py-1 rounded-md text-sm ${
+              page === pageNum ? 'bg-purple-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+            }`}
+          >
+            {pageNum}
+          </button>
+        ))}
+      </div>
+      <button
+        onClick={() => onPageChange(page + 1)}
+        disabled={page === totalPages}
+        className="flex items-center px-4 py-2 text-sm font-medium rounded-md bg-gray-700 border border-gray-600 text-gray-200 hover:bg-gray-600 disabled:bg-gray-800 disabled:text-gray-500 disabled:border-gray-700 disabled:cursor-not-allowed transition-colors"
+      >
+        Next
+        <ChevronRight className="h-4 w-4 ml-1" />
+      </button>
+    </div>
+  );
+};
+
+interface EditRentalModalProps {
+  rental: Rental;
+  onClose: () => void;
+  onSave: (updatedRental: Rental) => Promise<void>;
+}
+
+const EditRentalModal: React.FC<EditRentalModalProps> = ({ rental, onClose, onSave }) => {
+  const [formData, setFormData] = useState<Rental>({ ...rental });
+  const [errors, setErrors] = useState<{ [key: string]: string }>({});
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const validateForm = () => {
+    const newErrors: { [key: string]: string } = {};
+    if (!formData.user_id) newErrors.user_id = 'User ID is required';
+    if (!formData.book_id) newErrors.book_id = 'Book ID is required';
+    if (!formData.rented_at) newErrors.rented_at = 'Rented date is required';
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  const handleSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!validateForm()) return;
+
+    setIsSubmitting(true);
+    try {
+      await onSave(formData);
+      onClose();
+    } catch (err) {
+      setErrors({ server: err instanceof Error ? err.message : 'Failed to update rental' });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const inputFields = [
+    {
+      label: 'User ID',
+      name: 'user_id',
+      type: 'number',
+      icon: <User className="h-5 w-5 text-gray-500" />,
+      value: formData.user_id,
+      onChange: (e: React.ChangeEvent<HTMLInputElement>) =>
+        setFormData({ ...formData, user_id: parseInt(e.target.value) || 0 }),
+    },
+    {
+      label: 'Book ID',
+      name: 'book_id',
+      type: 'number',
+      icon: (
+        <BookOpen className="h-5 w-5 text-gray-500" />
+      ),
+      value: formData.book_id,
+      onChange: (e: React.ChangeEvent<HTMLInputElement>) =>
+        setFormData({ ...formData, book_id: parseInt(e.target.value) || 0 }),
+    },
+    {
+      label: 'Rented At',
+      name: 'rented_at',
+      type: 'datetime-local',
+      icon: <Calendar className="h-5 w-5 text-gray-500" />,
+      value: formData.rented_at ? format(new Date(formData.rented_at), "yyyy-MM-dd'T'HH:mm") : '',
+      onChange: (e: React.ChangeEvent<HTMLInputElement>) =>
+        setFormData({ ...formData, rented_at: e.target.value }),
+    },
+    {
+      label: 'Returned At',
+      name: 'returned_at',
+      type: 'datetime-local',
+      icon: <Calendar className="h-5 w-5 text-gray-500" />,
+      value: formData.returned_at ? format(new Date(formData.returned_at), "yyyy-MM-dd'T'HH:mm") : '',
+      onChange: (e: React.ChangeEvent<HTMLInputElement>) =>
+        setFormData({ ...formData, returned_at: e.target.value || null }),
+      required: false,
+    },
+  ];
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 backdrop-blur-sm">
+      <motion.div
+        className="bg-gray-800 border border-gray-700 rounded-lg p-6 w-full max-w-lg shadow-2xl"
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        exit={{ opacity: 0, scale: 0.95 }}
+      >
+        <div className="flex justify-between items-center mb-6 border-b border-gray-700 pb-4">
+          <h2 className="text-xl font-semibold text-white flex items-center">
+            <Edit className="h-5 w-5 mr-2 text-amber-400" />
+            Edit Rental
+          </h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-white">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {errors.server && (
+            <div className="bg-red-900/50 border border-red-700 text-red-200 px-4 py-2 rounded-lg">
+              <p className="text-sm">{errors.server}</p>
+            </div>
+          )}
+
+          {inputFields.map((field) => (
+            <div key={field.name}>
+              <label className="block text-sm font-medium text-gray-300 mb-1">{field.label}</label>
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  {field.icon}
+                </div>
+                <input
+                  type={field.type}
+                  name={field.name}
+                  value={field.value}
+                  onChange={field.onChange}
+                  required={field.required !== false}
+                  className={`w-full pl-10 px-3 py-2 bg-gray-700 border ${
+                    errors[field.name] ? 'border-red-600' : 'border-gray-600'
+                  } rounded-md focus:outline-none focus:ring-2 focus:ring-amber-500 text-white`}
+                />
+              </div>
+              {errors[field.name] && <p className="text-red-400 text-xs mt-1">{errors[field.name]}</p>}
+            </div>
+          ))}
+
+          <div className="flex justify-end gap-4 pt-4 border-t border-gray-700">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 bg-gray-700 text-white rounded-md hover:bg-gray-600 transition-colors border border-gray-600 flex items-center"
+              disabled={isSubmitting}
+            >
+              <X className="h-4 w-4 mr-1" />
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="px-4 py-2 bg-amber-600 text-white rounded-md hover:bg-amber-700 transition-colors shadow-lg flex items-center disabled:bg-amber-900 disabled:cursor-not-allowed"
+              disabled={isSubmitting}
+            >
+              {isSubmitting ? (
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-1"></div>
+              ) : (
+                <CheckCircle className="h-4 w-4 mr-1" />
+              )}
+              Save Changes
+            </button>
+          </div>
+        </form>
+      </motion.div>
+    </div>
+  );
+};
+
+// Main Component
 const AdminRentalsPage: React.FC = () => {
   const [rentals, setRentals] = useState<Rental[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
@@ -41,94 +275,67 @@ const AdminRentalsPage: React.FC = () => {
   const [viewRental, setViewRental] = useState<Rental | null>(null);
   const [editRental, setEditRental] = useState<Rental | null>(null);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
-  const [toast, setToast] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
-  // Fetch rentals
   const fetchRentals = async () => {
     try {
       setLoading(true);
       setError(null);
-
       const token = localStorage.getItem('token');
-      if (!token) {
-        throw new Error('No authentication token found');
-      }
+      if (!token) throw new Error('No authentication token found');
 
       const params = new URLSearchParams({
         page: page.toString(),
         per_page: perPage.toString(),
+        ...(statusFilter !== 'all' && { status: statusFilter }),
+        ...(searchQuery && { search: searchQuery }),
       });
-      if (statusFilter !== 'all') {
-        params.append('status', statusFilter);
-      }
-      if (searchQuery) {
-        params.append('search', searchQuery);
-      }
 
       const response = await fetch(`/api/rentals?${params.toString()}`, {
-        method: 'GET',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
+        headers: { 
+          Authorization: `Bearer ${token}`, 
+          'Content-Type': 'application/json' 
         },
       });
 
       if (!response.ok) {
-        if (response.status === 403) {
-          throw new Error('Forbidden: Admin access required');
-        }
-        if (response.status === 401) {
-          throw new Error('Unauthorized: Please log in again');
-        }
+        if (response.status === 403) throw new Error('Forbidden: Admin access required');
+        if (response.status === 401) throw new Error('Unauthorized: Please log in again');
         throw new Error(`HTTP error! Status: ${response.status}`);
       }
 
       const data: RentalsResponse = await response.json();
-      if (!data.rentals || !Array.isArray(data.rentals)) {
-        throw new Error('Invalid response format');
-      }
+      if (!data.rentals || !Array.isArray(data.rentals)) throw new Error('Invalid response format');
 
       setRentals(data.rentals);
       setTotalPages(data.total_pages || 1);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch rentals');
-      console.error('Error fetching rentals:', err);
       setRentals([]);
     } finally {
       setLoading(false);
     }
   };
 
-  // Handle actions (return, delete)
   const handleAction = async (rentalId: number, action: 'return' | 'delete') => {
-    if (!window.confirm(`Are you sure you want to ${action} this rental?`)) {
-      return;
-    }
+    if (!window.confirm(`Are you sure you want to ${action} this rental?`)) return;
 
     try {
       setActionLoading((prev) => ({ ...prev, [rentalId]: action }));
       setError(null);
-
       const token = localStorage.getItem('token');
-      if (!token) {
-        throw new Error('No authentication token found');
-      }
+      if (!token) throw new Error('No authentication token found');
 
       const method = action === 'delete' ? 'DELETE' : 'PUT';
       const url = action === 'delete' ? `/api/rentals/${rentalId}` : `/api/rentals/${rentalId}/return`;
 
       const response = await fetch(url, {
         method,
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       });
 
       if (!response.ok) {
-        if (response.status === 403) {
-          throw new Error('Forbidden: Admin access required');
-        }
+        if (response.status === 403) throw new Error('Forbidden: Admin access required');
         if (response.status === 400 || response.status === 404) {
           const data = await response.json();
           throw new Error(data.error || `Failed to ${action} rental`);
@@ -139,54 +346,39 @@ const AdminRentalsPage: React.FC = () => {
       if (action === 'delete') {
         setRentals((prev) => prev.filter((r) => r.id !== rentalId));
         setSelectedIds((prev) => prev.filter((id) => id !== rentalId));
-        setToast('Rental deleted successfully');
+        setToast({ message: 'Rental deleted successfully', type: 'success' });
       } else {
         const updatedRental = await response.json();
-        setRentals((prev) =>
-          prev.map((r) => (r.id === rentalId ? { ...r, ...updatedRental } : r))
-        );
-        setToast('Rental marked as returned');
+        setRentals((prev) => prev.map((r) => (r.id === rentalId ? { ...r, ...updatedRental } : r)));
+        setToast({ message: 'Rental marked as returned', type: 'success' });
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : `Failed to ${action} rental`);
-      console.error(`Error ${action}ing rental:`, err);
+      setToast({ message: err instanceof Error ? err.message : `Failed to ${action} rental`, type: 'error' });
     } finally {
       setActionLoading((prev) => ({ ...prev, [rentalId]: '' }));
     }
   };
 
-  // Handle edit submission
-  const handleEditSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!editRental) return;
-
+  const handleEditSave = async (updatedRental: Rental) => {
     try {
       setError(null);
       const token = localStorage.getItem('token');
-      if (!token) {
-        throw new Error('No authentication token found');
-      }
+      if (!token) throw new Error('No authentication token found');
 
-      const updateData = {
-        user_id: editRental.user_id,
-        book_id: editRental.book_id,
-        rented_at: editRental.rented_at,
-        returned_at: editRental.returned_at,
-      };
-
-      const response = await fetch(`/api/rentals/${editRental.id}`, {
+      const response = await fetch(`/api/rentals/${updatedRental.id}`, {
         method: 'PUT',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(updateData),
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_id: updatedRental.user_id,
+          book_id: updatedRental.book_id,
+          rented_at: updatedRental.rented_at,
+          returned_at: updatedRental.returned_at,
+        }),
       });
 
       if (!response.ok) {
-        if (response.status === 403) {
-          throw new Error('Forbidden: Admin access required');
-        }
+        if (response.status === 403) throw new Error('Forbidden: Admin access required');
         if (response.status === 400 || response.status === 404) {
           const data = await response.json();
           throw new Error(data.error || 'Failed to update rental');
@@ -194,44 +386,30 @@ const AdminRentalsPage: React.FC = () => {
         throw new Error(`HTTP error! Status: ${response.status}`);
       }
 
-      const updatedRental = await response.json();
-      setRentals((prev) =>
-        prev.map((r) => (r.id === editRental.id ? { ...r, ...updatedRental } : r))
-      );
-      setEditRental(null);
-      setToast('Rental updated successfully');
+      const updated = await response.json();
+      setRentals((prev) => prev.map((r) => (r.id === updatedRental.id ? { ...r, ...updated } : r)));
+      setToast({ message: 'Rental updated successfully', type: 'success' });
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to update rental');
-      console.error('Error updating rental:', err);
+      throw err;
     }
   };
 
-  // Handle bulk delete
   const handleBulkDelete = async () => {
-    if (!window.confirm(`Are you sure you want to delete ${selectedIds.length} rentals?`)) {
-      return;
-    }
+    if (!window.confirm(`Are you sure you want to delete ${selectedIds.length} rentals?`)) return;
 
     try {
       setError(null);
       const token = localStorage.getItem('token');
-      if (!token) {
-        throw new Error('No authentication token found');
-      }
+      if (!token) throw new Error('No authentication token found');
 
       const response = await fetch('/api/rentals/bulk', {
         method: 'DELETE',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ rental_ids: selectedIds }),
       });
 
       if (!response.ok) {
-        if (response.status === 403) {
-          throw new Error('Forbidden: Admin access required');
-        }
+        if (response.status === 403) throw new Error('Forbidden: Admin access required');
         if (response.status === 400) {
           const data = await response.json();
           throw new Error(data.error || 'Failed to delete rentals');
@@ -241,14 +419,13 @@ const AdminRentalsPage: React.FC = () => {
 
       setRentals((prev) => prev.filter((r) => !selectedIds.includes(r.id)));
       setSelectedIds([]);
-      setToast(`Deleted ${selectedIds.length} rentals`);
+      setToast({ message: `Deleted ${selectedIds.length} rentals`, type: 'success' });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete rentals');
-      console.error('Error deleting rentals:', err);
+      setToast({ message: err instanceof Error ? err.message : 'Failed to delete rentals', type: 'error' });
     }
   };
 
-  // Export as CSV
   const exportToCSV = () => {
     const headers = ['ID', 'User', 'Email', 'Book', 'Authors', 'Rented At', 'Returned At', 'Status'];
     const rows = rentals.map((r) => [
@@ -262,11 +439,7 @@ const AdminRentalsPage: React.FC = () => {
       r.returned_at ? 'Returned' : isOverdue(r.rented_at) ? 'Overdue' : 'Active',
     ]);
 
-    const csvContent = [
-      headers.join(','),
-      ...rows.map((row) => row.map((cell) => `"${cell}"`).join(',')),
-    ].join('\n');
-
+    const csvContent = [headers.join(','), ...rows.map((row) => row.map((cell) => `"${cell}"`).join(','))].join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -276,34 +449,29 @@ const AdminRentalsPage: React.FC = () => {
     URL.revokeObjectURL(url);
   };
 
-  // Check if rental is overdue (14 days)
   const isOverdue = (rentedAt: string) => {
     const rentedDate = new Date(rentedAt);
     const now = new Date();
-    const diffDays = (now.getTime() - rentedDate.getTime()) / (1000 * 3600 * 24);
-    return diffDays > 14;
+    return (now.getTime() - rentedDate.getTime()) / (1000 * 3600 * 24) > 14;
   };
 
-  // Fetch on mount and when filters change
+  const formatDate = (dateString: string) => {
+    try {
+      return format(new Date(dateString), 'MMM dd, yyyy HH:mm');
+    } catch {
+      return dateString;
+    }
+  };
+
+  const getCoverColor = (title: string = '') => {
+    const colors = ['bg-indigo-600', 'bg-emerald-600', 'bg-fuchsia-600', 'bg-amber-600'];
+    return colors[title.length % colors.length];
+  };
+
   useEffect(() => {
     fetchRentals();
   }, [page, statusFilter, searchQuery]);
 
-  // Handle pagination
-  const handlePageChange = (newPage: number) => {
-    if (newPage >= 1 && newPage <= totalPages) {
-      setPage(newPage);
-    }
-  };
-
-  // Get cover color for fallback
-  const getCoverColor = (title: string = '') => {
-    const colors = ['bg-blue-500', 'bg-green-500', 'bg-purple-500'];
-    const index = title.length % colors.length;
-    return colors[index];
-  };
-
-  // Clear toast after 3s
   useEffect(() => {
     if (toast) {
       const timer = setTimeout(() => setToast(null), 3000);
@@ -313,341 +481,328 @@ const AdminRentalsPage: React.FC = () => {
 
   return (
     <Layout>
-      <div className="container mx-auto px-4 py-6">
-        <div className="bg-white rounded-lg shadow-lg p-6">
-          <div className="flex justify-between items-center mb-6">
-            <h1 className="text-2xl font-semibold text-gray-800">Rentals</h1>
-            <div className="flex gap-4">
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search by user or book..."
-                className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-              />
-              <select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-                className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-              >
-                <option value="all">All Statuses</option>
-                <option value="active">Active</option>
-                <option value="returned">Returned</option>
-              </select>
-              <button
-                onClick={exportToCSV}
-                className="px-3 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm"
-              >
-                Export CSV
-              </button>
-            </div>
-          </div>
-
-          {error && (
-            <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
-              {error}
-            </div>
-          )}
-
-          {toast && (
-            <div className="fixed top-4 right-4 bg-green-100 text-green-700 p-4 rounded shadow-lg">
-              {toast}
-            </div>
-          )}
-
-          {loading ? (
-            <div className="flex justify-center items-center h-40">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
-            </div>
-          ) : (
-            <>
-              <div className="flex justify-between items-center mb-4">
-                <div>
-                  {selectedIds.length > 0 && (
-                    <button
-                      onClick={handleBulkDelete}
-                      className="px-3 py-1 bg-red-600 text-white rounded-md hover:bg-red-700 text-sm"
-                    >
-                      Delete Selected ({selectedIds.length})
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              <div className="overflow-x-auto">
-                <table className="w-full table-auto">
-                  <thead>
-                    <tr className="border-b border-dotted border-gray-300">
-                      <th className="text-left py-2 px-4 text-sm text-gray-600">
-                        <input
-                          type="checkbox"
-                          checked={selectedIds.length === rentals.length && rentals.length > 0}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setSelectedIds(rentals.map((r) => r.id));
-                            } else {
-                              setSelectedIds([]);
-                            }
-                          }}
-                        />
-                      </th>
-                      <th className="text-left py-2 px-4 text-sm text-gray-600">ID</th>
-                      <th className="text-left py-2 px-4 text-sm text-gray-600">User</th>
-                      <th className="text-left py-2 px-4 text-sm text-gray-600">Book</th>
-                      <th className="text-left py-2 px-4 text-sm text-gray-600">Rented At</th>
-                      <th className="text-left py-2 px-4 text-sm text-gray-600">Returned At</th>
-                      <th className="text-left py-2 px-4 text-sm text-gray-600">Status</th>
-                      <th className="text-left py-2 px-4 text-sm text-gray-600">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rentals.length === 0 ? (
-                      <tr>
-                        <td colSpan={8} className="text-center py-4 text-gray-500">
-                          No rentals found
-                        </td>
-                      </tr>
-                    ) : (
-                      rentals.map((rental) => (
-                        <tr key={rental.id} className="border-b border-dotted border-gray-300 hover:bg-gray-50">
-                          <td className="py-4 px-4">
-                            <input
-                              type="checkbox"
-                              checked={selectedIds.includes(rental.id)}
-                              onChange={(e) => {
-                                if (e.target.checked) {
-                                  setSelectedIds((prev) => [...prev, rental.id]);
-                                } else {
-                                  setSelectedIds((prev) => prev.filter((id) => id !== rental.id));
-                                }
-                              }}
-                            />
-                          </td>
-                          <td className="py-4 px-4 text-sm">{rental.id}</td>
-                          <td className="py-4 px-4 text-sm">
-                            {rental.user ? (
-                              <div>
-                                <div>{rental.user.name}</div>
-                                <div className="text-gray-500 text-xs">{rental.user.email}</div>
-                              </div>
-                            ) : (
-                              'Unknown User'
-                            )}
-                          </td>
-                          <td className="py-4 px-4">
-                            {rental.book ? (
-                              <div className="flex items-center">
-                                <div
-                                  className={`w-10 h-14 ${getCoverColor(
-                                    rental.book.title
-                                  )} rounded flex items-center justify-center mr-3 text-white text-xs`}
-                                >
-                                  {rental.book.cover_url ? (
-                                    <img
-                                      src={rental.book.cover_url}
-                                      alt={rental.book.title}
-                                      className="w-full h-full object-cover rounded"
-                                      onError={(e) => (e.currentTarget.style.display = 'none')}
-                                    />
-                                  ) : (
-                                    <span>BOOK</span>
-                                  )}
-                                </div>
-                                <div className="font-medium">{rental.book.title}</div>
-                              </div>
-                            ) : (
-                              'Unknown Book'
-                            )}
-                          </td>
-                          <td className="py-4 px-4 text-sm">{rental.rented_at}</td>
-                          <td className="py-4 px-4 text-sm">{rental.returned_at || '—'}</td>
-                          <td className="py-4 px-4 text-sm">
-                            <span
-                              className={`px-2 py-1 rounded text-xs ${
-                                rental.returned_at
-                                  ? 'bg-gray-100 text-gray-800'
-                                  : isOverdue(rental.rented_at)
-                                  ? 'bg-red-100 text-red-800'
-                                  : 'bg-green-100 text-green-800'
-                              }`}
-                            >
-                              {rental.returned_at
-                                ? 'Returned'
-                                : isOverdue(rental.rented_at)
-                                ? 'Overdue'
-                                : 'Active'}
-                            </span>
-                          </td>
-                          <td className="py-4 px-4 text-sm">
-                            <div className="flex gap-2">
-                              <button
-                                onClick={() => setViewRental(rental)}
-                                className="px-3 py-1 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-xs"
-                              >
-                                View
-                              </button>
-                              <button
-                                onClick={() => setEditRental(rental)}
-                                className="px-3 py-1 bg-yellow-600 text-white rounded-md hover:bg-yellow-700 text-xs"
-                              >
-                                Edit
-                              </button>
-                              {!rental.returned_at && (
-                                <button
-                                  onClick={() => handleAction(rental.id, 'return')}
-                                  disabled={!!actionLoading[rental.id]}
-                                  className={`px-3 py-1 bg-green-600 text-white rounded-md hover:bg-green-700 text-xs disabled:bg-green-400 disabled:cursor-not-allowed`}
-                                >
-                                  {actionLoading[rental.id] === 'return' ? 'Processing...' : 'Return'}
-                                </button>
-                              )}
-                              <button
-                                onClick={() => handleAction(rental.id, 'delete')}
-                                disabled={!!actionLoading[rental.id]}
-                                className={`px-3 py-1 bg-red-600 text-white rounded-md hover:bg-red-700 text-xs disabled:bg-red-400 disabled:cursor-not-allowed`}
-                              >
-                                {actionLoading[rental.id] === 'delete' ? 'Processing...' : 'Delete'}
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* Pagination */}
-              {totalPages > 1 && (
-                <div className="flex justify-between items-center mt-6">
-                  <button
-                    onClick={() => handlePageChange(page - 1)}
-                    disabled={page === 1}
-                    className="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed"
+      <div className="min-h-screen bg-gray-900 text-gray-100">
+        <div className="container mx-auto px-4 py-8">
+          <motion.div
+            className="bg-gray-800 rounded-xl shadow-2xl overflow-hidden border border-gray-700"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5 }}
+          >
+            <div className="p-6 border-b border-gray-700">
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                <h1 className="text-2xl font-bold text-white flex items-center">
+                  <BookOpen className="w-6 h-6 mr-2 text-amber-400" />
+                  Rentals Management
+                </h1>
+                <div className="flex flex-col md:flex-row gap-3 w-full md:w-auto">
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                      <Search className="h-4 w-4 text-gray-400" />
+                    </div>
+                    <input
+                      type="text"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      placeholder="Search user or book..."
+                      className="pl-10 pr-4 py-2 w-full md:w-64 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-200 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+                    />
+                  </div>
+                  <select
+                    value={statusFilter}
+                    onChange={(e) => setStatusFilter(e.target.value)}
+                    className="px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent"
                   >
-                    Previous
-                  </button>
-                  <span className="text-sm text-gray-600">
-                    Page {page} of {totalPages}
-                  </span>
+                    <option value="all">All Statuses</option>
+                    <option value="active">Active</option>
+                    <option value="returned">Returned</option>
+                  </select>
                   <button
-                    onClick={() => handlePageChange(page + 1)}
-                    disabled={page === totalPages}
-                    className="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed"
+                    onClick={exportToCSV}
+                    className="px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors flex items-center justify-center"
                   >
-                    Next
+                    <Download className="h-4 w-4 mr-2" />
+                    Export CSV
                   </button>
                 </div>
-              )}
-            </>
-          )}
-        </div>
-
-        {/* View Modal */}
-        {viewRental && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-lg p-6 w-full max-w-lg">
-              <h2 className="text-xl font-semibold mb-4">Rental Details</h2>
-              <div className="space-y-2">
-                <p><strong>ID:</strong> {viewRental.id}</p>
-                <p><strong>User:</strong> {viewRental.user?.name || 'Unknown'} ({viewRental.user?.email || ''})</p>
-                <p><strong>Book:</strong> {viewRental.book?.title || 'Unknown'}</p>
-                <p><strong>Authors:</strong> {viewRental.book?.authors.join(', ') || 'None'}</p>
-                <p><strong>Categories:</strong> {viewRental.book?.categories.join(', ') || 'None'}</p>
-                <p><strong>Rented At:</strong> {viewRental.rented_at}</p>
-                <p><strong>Returned At:</strong> {viewRental.returned_at || 'Not returned'}</p>
-                <p>
-                  <strong>Status:</strong>{' '}
-                  {viewRental.returned_at
-                    ? 'Returned'
-                    : isOverdue(viewRental.rented_at)
-                    ? 'Overdue'
-                    : 'Active'}
-                </p>
               </div>
-              <div className="mt-6 flex justify-end">
+            </div>
+
+            {error && <ErrorMessage message={error} />}
+            {toast && <ToastNotification message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
+
+            {selectedIds.length > 0 && (
+              <div className="mx-6 mt-4 p-2 bg-gray-700 rounded-lg flex items-center">
+                <span className="text-sm text-gray-300 mr-3">Selected {selectedIds.length} items</span>
                 <button
-                  onClick={() => setViewRental(null)}
-                  className="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700"
+                  onClick={handleBulkDelete}
+                  className="px-3 py-1 bg-red-600 text-white rounded-md hover:bg-red-700 text-sm transition-colors flex items-center"
                 >
-                  Close
+                  <Trash2 className="h-4 w-4 mr-1" />
+                  Delete Selected
                 </button>
               </div>
-            </div>
+            )}
+
+            {loading ? (
+              <LoadingSpinner />
+            ) : (
+              <>
+                <div className="overflow-x-auto mt-4">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="text-left border-b border-gray-700">
+                        <th className="px-6 py-3 text-xs font-medium text-gray-400 uppercase tracking-wider">
+                          <input
+                            type="checkbox"
+                            className="rounded bg-gray-700 border-gray-600 text-amber-600 focus:ring-amber-500 focus:ring-offset-gray-800"
+                            checked={selectedIds.length === rentals.length && rentals.length > 0}
+                            onChange={(e) =>
+                              setSelectedIds(e.target.checked ? rentals.map((r) => r.id) : [])
+                            }
+                          />
+                        </th>
+                        <th className="px-6 py-3 text-xs font-medium text-gray-400 uppercase tracking-wider">ID</th>
+                        <th className="px-6 py-3 text-xs font-medium text-gray-400 uppercase tracking-wider">User</th>
+                        <th className="px-6 py-3 text-xs font-medium text-gray-400 uppercase tracking-wider">Book</th>
+                        <th className="px-6 py-3 text-xs font-medium text-gray-400 uppercase tracking-wider">Dates</th>
+                        <th className="px-6 py-3 text-xs font-medium text-gray-400 uppercase tracking-wider">Status</th>
+                        <th className="px-6 py-3 text-xs font-medium text-gray-400 uppercase tracking-wider">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-700">
+                      {rentals.length === 0 ? (
+                        <tr>
+                          <td colSpan={7} className="px-6 py-10 text-center text-gray-400">
+                            No rentals found
+                          </td>
+                        </tr>
+                      ) : (
+                        rentals.map((rental) => (
+                          <motion.tr
+                            key={rental.id}
+                            className="hover:bg-gray-750 transition-colors"
+                            whileHover={{ scale: 1.01 }}
+                          >
+                            <td className="px-6 py-4">
+                              <input
+                                type="checkbox"
+                                className="rounded bg-gray-700 border-gray-600 text-amber-600 focus:ring-amber-500 focus:ring-offset-gray-800"
+                                checked={selectedIds.includes(rental.id)}
+                                onChange={(e) =>
+                                  setSelectedIds(
+                                    e.target.checked
+                                      ? [...selectedIds, rental.id]
+                                      : selectedIds.filter((id) => id !== rental.id)
+                                  )
+                                }
+                              />
+                            </td>
+                            <td className="px-6 py-4 text-gray-300">{rental.id}</td>
+                            <td className="px-6 py-4">
+                              {rental.user ? (
+                                <div className="flex items-center">
+                                  <div className="w-8 h-8 rounded-full bg-gray-600 flex items-center justify-center mr-3 text-white">
+                                    <User className="h-4 w-4 text-gray-300" />
+                                  </div>
+                                  <div>
+                                    <div className="font-medium text-white">{rental.user.name}</div>
+                                    <div className="text-sm text-gray-400">{rental.user.email}</div>
+                                  </div>
+                                </div>
+                              ) : (
+                                <span className="text-gray-400">Unknown User</span>
+                              )}
+                            </td>
+                            <td className="px-6 py-4">
+                              {rental.book ? (
+                                <div className="flex items-center">
+                                  <div
+                                    className={`w-10 h-14 ${getCoverColor(rental.book.title)} rounded flex items-center justify-center mr-3 text-white text-xs`}
+                                  >
+                                    {rental.book.cover_url ? (
+                                      <img
+                                        src={rental.book.cover_url}
+                                        alt={rental.book.title}
+                                        className="w-full h-full whitespace-nowrap object-cover rounded"
+                                        onError={(e) => (e.currentTarget.style.display = 'none')}
+                                      />
+                                    ) : (
+                                      <BookOpen className="h-4 w-4" />
+                                    )}
+                                  </div>
+                                  <div>
+                                    <div className="font-medium text-white">{rental.book.title}</div>
+                                    {rental.book.authors.length > 0 && (
+                                      <div className="text-sm text-gray-400">
+                                        {rental.book.authors[0]}
+                                        {rental.book.authors.length > 1 && ' et al.'}
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              ) : (
+                                <span className="text-gray-400">Unknown Book</span>
+                              )}
+                            </td>
+                            <td className="px-6 py-4">
+                              <div className="flex flex-col">
+                                <div className="flex items-center text-sm text-gray-300">
+                                  <Calendar className="h-3 w-3 mr-1 text-amber-400" />
+                                  Rented: {formatDate(rental.rented_at)}
+                                </div>
+                                <div className="flex items-center text-sm text-gray-400 mt-1">
+                                  <Calendar className="h-3 w-3 mr-1 text-gray-500" />
+                                  Returned: {rental.returned_at ? formatDate(rental.returned_at) : '—'}
+                                </div>
+                              </div>
+                            </td>
+                            <td className="px-6 py-4">
+                              <span
+                                className={`px-2 py-1 rounded-full text-xs font-medium ${
+                                  rental.returned_at
+                                    ? 'bg-gray-700 text-gray-300 border border-gray-600'
+                                    : isOverdue(rental.rented_at)
+                                    ? 'bg-red-900/50 text-red-200 border border-red-700'
+                                    : 'bg-green-900/50 text-green-200 border border-green-700'
+                                }`}
+                              >
+                                {rental.returned_at ? 'Returned' : isOverdue(rental.rented_at) ? 'Overdue' : 'Active'}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4">
+                              <div className="flex space-x-2">
+                                <button
+                                  onClick={() => setViewRental(rental)}
+                                  className="p-1 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+                                  title="View details"
+                                >
+                                  <Eye className="h-4 w-4" />
+                                </button>
+                                <button
+                                  onClick={() => setEditRental(rental)}
+                                  className="p-1 bg-amber-600 text-white rounded hover:bg-amber-700 transition-colors"
+                                  title="Edit rental"
+                                >
+                                  <Edit className="h-4 w-4" />
+                                </button>
+                                {!rental.returned_at && (
+                                  <button
+                                    onClick={() => handleAction(rental.id, 'return')}
+                                    disabled={!!actionLoading[rental.id]}
+                                    className="p-1 bg-emerald-600 text-white rounded hover:bg-emerald-700 transition-colors disabled:bg-emerald-900 disabled:cursor-not-allowed"
+                                    title="Mark as returned"
+                                  >
+                                    <CheckCircle className="h-4 w-4" />
+                                  </button>
+                                )}
+                                <button
+                                  onClick={() => handleAction(rental.id, 'delete')}
+                                  disabled={!!actionLoading[rental.id]}
+                                  className="p-1 bg-red-600 text-white rounded hover:bg-red-700 transition-colors disabled:bg-red-900 disabled:cursor-not-allowed"
+                                  title="Delete rental"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </button>
+                              </div>
+                            </td>
+                          </motion.tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+                {totalPages > 1 && (
+                  <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
+                )}
+              </>
+            )}
+          </motion.div>
+        </div>
+
+        {viewRental && (
+          <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
+            <motion.div
+              className="bg-gray-800 rounded-xl border border-gray-700 shadow-2xl w-full max-w-lg overflow-hidden"
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+            >
+              <div className="border-b border-gray-700 px-6 py-4 flex justify-between items-center">
+                <h2 className="text-xl font-semibold text-white">Rental Details</h2>
+                <button
+                  onClick={() => setViewRental(null)}
+                  className="text-gray-400 hover:text-white transition-colors"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+              <div className="p-6 space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-3">
+                    <div>
+                      <h3 className="text-xs font-medium text-gray-400 uppercase tracking-wider">ID</h3>
+                      <p className="text-white mt-1">{viewRental.id}</p>
+                    </div>
+                    <div>
+                      <h3 className="text-xs font-medium text-gray-400 uppercase tracking-wider">Status</h3>
+                      <span
+                        className={`inline-flex mt-2 px-2 py-1 rounded-full text-xs font-medium ${
+                          viewRental.returned_at
+                            ? 'bg-gray-700 text-gray-300 border border-gray-600'
+                            : isOverdue(viewRental.rented_at)
+                            ? 'bg-red-900/50 text-red-200 border border-red-700'
+                            : 'bg-green-900/50 text-green-200 border border-green-700'
+                        }`}
+                      >
+                        {viewRental.returned_at
+                          ? 'Returned'
+                          : isOverdue(viewRental.rented_at)
+                          ? 'Overdue'
+                          : 'Active'}
+                      </span>
+                    </div>
+                    <div>
+                      <h3 className="text-xs font-medium text-gray-400 uppercase tracking-wider">Rented At</h3>
+                      <p className="text-white mt-1 flex items-center">
+                        <Calendar className="h-3 w-3 mr-2 text-amber-400" />
+                        {formatDate(viewRental.rented_at)}
+                      </p>
+                    </div>
+                    <div>
+                      <h3 className="text-xs font-medium text-gray-400 uppercase tracking-wider">Returned At</h3>
+                      <p className="text-white mt-1 flex items-center">
+                        <Calendar className="h-3 w-3 mr-2 text-gray-500" />
+                        {viewRental.returned_at ? formatDate(viewRental.returned_at) : '—'}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="space-y-3">
+                    <div>
+                      <h3 className="text-xs font-medium text-gray-400 uppercase tracking-wider">User</h3>
+                      <p className="text-white mt-1">{viewRental.user?.name || 'Unknown'}</p>
+                      <p className="text-gray-400 text-sm">{viewRental.user?.email || '—'}</p>
+                    </div>
+                    <div>
+                      <h3 className="text-xs font-medium text-gray-400 uppercase tracking-wider">Book</h3>
+                      <p className="text-white mt-1">{viewRental.book?.title || 'Unknown'}</p>
+                      <p className="text-gray-400 text-sm">
+                        {viewRental.book?.authors.join(', ') || '—'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
           </div>
         )}
 
-        {/* Edit Modal */}
         {editRental && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-lg p-6 w-full max-w-lg">
-              <h2 className="text-xl font-semibold mb-4">Edit Rental</h2>
-              <form onSubmit={handleEditSubmit} className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">User ID</label>
-                  <input
-                    type="number"
-                    value={editRental.user_id}
-                    onChange={(e) =>
-                      setEditRental((prev) => prev && { ...prev, user_id: parseInt(e.target.value) })
-                    }
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Book ID</label>
-                  <input
-                    type="number"
-                    value={editRental.book_id}
-                    onChange={(e) =>
-                      setEditRental((prev) => prev && { ...prev, book_id: parseInt(e.target.value) })
-                    }
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Rented At</label>
-                  <input
-                    type="datetime-local"
-                    value={format(new Date(editRental.rented_at), "yyyy-MM-dd'T'HH:mm")}
-                    onChange={(e) =>
-                      setEditRental((prev) => prev && { ...prev, rented_at: e.target.value })
-                    }
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Returned At</label>
-                  <input
-                    type="datetime-local"
-                    value={editRental.returned_at ? format(new Date(editRental.returned_at), "yyyy-MM-dd'T'HH:mm") : ''}
-                    onChange={(e) =>
-                      setEditRental((prev) => prev && { ...prev, returned_at: e.target.value || null })
-                    }
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div className="flex justify-end gap-4">
-                  <button
-                    type="button"
-                    onClick={() => setEditRental(null)}
-                    className="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
-                  >
-                    Save
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
+          <EditRentalModal
+            rental={editRental}
+            onClose={() => setEditRental(null)}
+            onSave={handleEditSave}
+          />
         )}
       </div>
     </Layout>
