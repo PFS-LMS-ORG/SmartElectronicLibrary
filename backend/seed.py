@@ -5,6 +5,8 @@ from app.model.Author import Author
 from app.model.Category import Category
 from app.model.User import User
 from app.model.Rental import Rental
+from app.model.RentalRequest import RentalRequest
+from datetime import datetime, timedelta
 
 app = create_app()
 
@@ -153,8 +155,6 @@ with app.app_context():
     user3.set_password("password123")
 
     # Add rentals
-    from datetime import datetime, timedelta
-
     rental1 = Rental(user=user1, book=hp, rented_at=datetime.utcnow() - timedelta(days=3))
     rental2 = Rental(
         user=user2,
@@ -164,7 +164,38 @@ with app.app_context():
     )
     rental3 = Rental(user=user3, book=design_patterns, rented_at=datetime.utcnow() - timedelta(days=1))
 
-    db.session.add_all([user1, user2, user3, rental1, rental2, rental3])
+    # Add rental requests
+    request1 = RentalRequest(
+        user=user1,
+        book=lotr,
+        requested_at=datetime.utcnow() - timedelta(days=5),
+        status='pending'
+    )
+    request2 = RentalRequest(
+        user=user2,
+        book=fury,
+        requested_at=datetime.utcnow() - timedelta(days=7),
+        status='approved'
+    )
+    request3 = RentalRequest(
+        user=user3,
+        book=maidens,
+        requested_at=datetime.utcnow() - timedelta(days=2),
+        status='rejected'
+    )
+    request4 = RentalRequest(
+        user=user1,
+        book=gerald,
+        requested_at=datetime.utcnow() - timedelta(days=1),
+        status='pending'
+    )
+
+    # Add all users, rentals, and rental requests to the session
+    db.session.add_all([
+        user1, user2, user3,
+        rental1, rental2, rental3,
+        request1, request2, request3, request4
+    ])
 
     # Commit all changes
     try:
