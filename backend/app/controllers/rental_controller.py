@@ -39,27 +39,66 @@ def create_rental():
     except Exception as e:
         return jsonify({'error': 'Internal server error'}), 500
 
+# @rental_controller.route('/rentals', methods=['GET'])
+# @jwt_required()
+# def get_all_rentals():
+#     """
+#     Get all rentals with pagination (admin only).
+#     Query params: page (default=1), per_page (default=10)
+#     """
+#     try:
+#         admin_check = check_admin()
+#         if admin_check:
+#             return admin_check
+
+#         page = int(request.args.get('page', 1))
+#         per_page = int(request.args.get('per_page', 10))
+        
+#         result = RentalService.get_all_rentals(page, per_page)
+#         return jsonify(result), 200
+#     except ValueError as e:
+#         return jsonify({'error': str(e)}), 400
+#     except Exception as e:
+#         return jsonify({'error': 'Internal server error'}), 500
 @rental_controller.route('/rentals', methods=['GET'])
 @jwt_required()
 def get_all_rentals():
     """
-    Get all rentals with pagination (admin only).
-    Query params: page (default=1), per_page (default=10)
+    Get all rentals with pagination and filters (admin only).
+    Query params:
+        - page (default=1): Page number for pagination
+        - per_page (default=10): Number of items per page
+        - status (optional): Filter by rental status ('active', 'returned', 'all')
+        - search (optional): Search term to filter by user name, email, or book title
+    Returns:
+        JSON response with rentals, total count, and total pages
     """
     try:
+        # Check if user is admin
         admin_check = check_admin()
         if admin_check:
             return admin_check
 
+        # Extract query parameters
         page = int(request.args.get('page', 1))
         per_page = int(request.args.get('per_page', 10))
-        
-        result = RentalService.get_all_rentals(page, per_page)
+        status = request.args.get('status', 'all')  # Default to 'all' if not provided
+        search = request.args.get('search', '').strip()  # Default to empty string if not provided
+
+        # Validate status parameter
+        valid_statuses = ['all', 'active', 'returned']
+        if status not in valid_statuses:
+            return jsonify({'error': f"Invalid status. Must be one of: {', '.join(valid_statuses)}"}), 400
+
+        # Pass parameters to the service layer
+        result = RentalService.get_all_rentals(page, per_page, status, search)
         return jsonify(result), 200
+
     except ValueError as e:
         return jsonify({'error': str(e)}), 400
     except Exception as e:
         return jsonify({'error': 'Internal server error'}), 500
+
 
 @rental_controller.route('/rentals/<int:rental_id>', methods=['GET'])
 @jwt_required()
