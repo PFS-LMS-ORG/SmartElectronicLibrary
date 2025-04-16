@@ -1,6 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import Layout from '@/components/layout/layout';
+import { 
+  Book, ChevronLeft, Save, X, Image, Star, Bookmark, 
+  FileText, Users, Tag, Repeat, Hash, Check, AlertTriangle 
+} from 'lucide-react';
 
 interface Book {
   id: number;
@@ -37,6 +41,7 @@ const EditBookPage: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState<boolean>(false);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   // Fetch book data
   useEffect(() => {
@@ -115,6 +120,7 @@ const EditBookPage: React.FC = () => {
     e.preventDefault();
     setSubmitting(true);
     setError(null);
+    setSuccessMessage(null);
 
     try {
       const token = localStorage.getItem('token');
@@ -141,7 +147,12 @@ const EditBookPage: React.FC = () => {
         throw new Error(`HTTP error! Status: ${response.status}`);
       }
 
-      navigate('/admin/books', { state: { message: 'Book updated successfully' } });
+      setSuccessMessage('Book updated successfully');
+      
+      // Optional: Navigate back after a delay
+      setTimeout(() => {
+        navigate('/admin/books');
+      }, 2000);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to update book');
       console.error('Error updating book:', err);
@@ -150,188 +161,303 @@ const EditBookPage: React.FC = () => {
     }
   };
 
+  // Input component with consistent styling
+  const FormInput = ({ 
+    label, name, value, type = 'text', onChange, icon, required = false, min, max, step, disabled = false
+  }: { 
+    label: string,
+    name: string,
+    value: string | number | undefined,
+    type?: string,
+    onChange: (e: React.ChangeEvent<HTMLInputElement>) => void,
+    icon: React.ReactNode,
+    required?: boolean,
+    min?: string | number,
+    max?: string | number,
+    step?: string | number,
+    disabled?: boolean
+  }) => (
+    <div className="mb-5">
+      <label className="block text-sm font-medium text-gray-300 mb-1.5">{label}</label>
+      <div className="relative">
+        <div className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400">
+          {icon}
+        </div>
+        <input
+          type={type}
+          name={name}
+          value={value || ''}
+          onChange={onChange}
+          className="w-full pl-10 pr-4 py-2.5 bg-[#1e263a] border border-[#2a2f42] rounded-lg text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+          required={required}
+          min={min}
+          max={max}
+          step={step}
+          disabled={disabled}
+        />
+      </div>
+    </div>
+  );
+
+  // Textarea component with consistent styling
+  const FormTextarea = ({ 
+    label, name, value, onChange, icon, rows = 4, required = false
+  }: { 
+    label: string,
+    name: string,
+    value: string | undefined,
+    onChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void,
+    icon: React.ReactNode,
+    rows?: number,
+    required?: boolean
+  }) => (
+    <div className="mb-5">
+      <label className="block text-sm font-medium text-gray-300 mb-1.5">{label}</label>
+      <div className="relative">
+        <div className="absolute left-3 top-3 text-gray-400">
+          {icon}
+        </div>
+        <textarea
+          name={name}
+          value={value || ''}
+          onChange={onChange}
+          rows={rows}
+          className="w-full pl-10 pr-4 py-2.5 bg-[#1e263a] border border-[#2a2f42] rounded-lg text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+          required={required}
+        />
+      </div>
+    </div>
+  );
+
   return (
     <Layout>
-      <div className="container mx-auto px-4 py-6">
-        <div className="bg-white rounded-lg shadow-lg p-6 max-w-2xl mx-auto">
-          <h1 className="text-2xl font-semibold text-gray-800 mb-6">Edit Book</h1>
-
-          {loading ? (
-            <div className="flex justify-center items-center h-40">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
-            </div>
-          ) : error ? (
-            <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
-              {error}
-            </div>
-          ) : (
-            <form onSubmit={handleSubmit} className="space-y-4">
-              {/* Title */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Title</label>
-                <input
-                  type="text"
-                  name="title"
-                  value={formData.title || ''}
-                  onChange={handleChange}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  required
-                />
-              </div>
-
-              {/* Cover URL */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Cover URL</label>
-                <input
-                  type="url"
-                  name="cover_url"
-                  value={formData.cover_url || ''}
-                  onChange={handleChange}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-                {formData.cover_url && (
-                  <img
-                    src={formData.cover_url}
-                    alt="Cover preview"
-                    className="mt-2 w-24 h-32 object-cover rounded"
-                    onError={(e) => (e.currentTarget.style.display = 'none')}
-                  />
-                )}
-              </div>
-
-              {/* Description */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Description</label>
-                <textarea
-                  name="description"
-                  value={formData.description || ''}
-                  onChange={handleChange}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  rows={4}
-                />
-              </div>
-
-              {/* Rating */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Rating (0-5)</label>
-                <input
-                  type="number"
-                  name="rating"
-                  value={formData.rating || 0}
-                  onChange={handleChange}
-                  min="0"
-                  max="5"
-                  step="0.1"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              {/* Summary */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Summary</label>
-                <textarea
-                  name="summary"
-                  value={formData.summary || ''}
-                  onChange={handleChange}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  rows={4}
-                />
-              </div>
-
-              {/* Authors */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Authors (comma-separated)</label>
-                <input
-                  type="text"
-                  value={formData.authors?.join(', ') || ''}
-                  onChange={(e) => handleArrayChange('authors', e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="Jane Austen, John Smith"
-                />
-              </div>
-
-              {/* Categories */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Categories (comma-separated)</label>
-                <input
-                  type="text"
-                  value={formData.categories?.join(', ') || ''}
-                  onChange={(e) => handleArrayChange('categories', e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="Fiction, Classic"
-                />
-              </div>
-
-              {/* Borrow Count */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Borrow Count</label>
-                <input
-                  type="number"
-                  name="borrow_count"
-                  value={formData.borrow_count || 0}
-                  onChange={handleChange}
-                  min="0"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              {/* Total Books */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Total Books</label>
-                <input
-                  type="number"
-                  name="total_books"
-                  value={formData.total_books || 0}
-                  onChange={handleChange}
-                  min="0"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              {/* Available Books */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Available Books</label>
-                <input
-                  type="number"
-                  name="available_books"
-                  value={formData.available_books || 0}
-                  onChange={handleChange}
-                  min="0"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              {/* Featured Book */}
+      <div className="w-full p-6">
+        <div className="bg-[#1a2032] rounded-xl shadow-sm overflow-hidden">
+          {/* Header */}
+          <div className="p-6 border-b border-[#2a2f42]">
+            <div className="flex justify-between items-center">
               <div className="flex items-center">
-                <input
-                  type="checkbox"
-                  name="featured_book"
-                  checked={formData.featured_book || false}
-                  onChange={handleChange}
-                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                />
-                <label className="ml-2 text-sm font-medium text-gray-700">Featured Book</label>
+                <div className="mr-4 bg-indigo-900/30 p-2 rounded-lg">
+                  <Book className="text-indigo-400" size={20} />
+                </div>
+                <div>
+                  <h1 className="text-xl font-bold text-gray-100">Edit Book</h1>
+                  <p className="text-sm text-gray-400">
+                    Update book information and details
+                  </p>
+                </div>
               </div>
+              <button
+                onClick={() => navigate('/admin/books')}
+                className="flex items-center px-3 py-1.5 bg-[#252b3d] text-gray-300 rounded-lg hover:bg-[#2a314a] transition-colors"
+              >
+                <ChevronLeft size={16} className="mr-1" /> Back to Books
+              </button>
+            </div>
+          </div>
 
-              {/* Buttons */}
-              <div className="flex gap-4 mt-6">
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className={`px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-blue-400 disabled:cursor-not-allowed`}
-                >
-                  {submitting ? 'Saving...' : 'Save Changes'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => navigate('/admin/books')}
-                  className="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-500"
-                >
-                  Cancel
-                </button>
+          {/* Main content */}
+          <div className="p-6">
+            {loading ? (
+              <div className="flex justify-center items-center py-12">
+                <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-indigo-400"></div>
+              </div>
+            ) : error ? (
+              <div className="mb-6 bg-red-900/20 border border-red-800 text-red-400 px-4 py-3 rounded-lg flex items-start">
+                <AlertTriangle size={18} className="mr-2 flex-shrink-0 mt-0.5" />
+                <div>{error}</div>
+              </div>
+            ) : successMessage ? (
+              <div className="mb-6 bg-green-900/20 border border-green-800 text-green-400 px-4 py-3 rounded-lg flex items-start">
+                <Check size={18} className="mr-2 flex-shrink-0 mt-0.5" />
+                <div>{successMessage}</div>
+              </div>
+            ) : null}
+
+            <form onSubmit={handleSubmit} className="max-w-2xl mx-auto">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="md:col-span-2">
+                  <FormInput
+                    label="Title"
+                    name="title"
+                    value={formData.title}
+                    onChange={handleChange}
+                    icon={<Book size={16} />}
+                    required
+                  />
+                </div>
+
+                <div className="md:col-span-2">
+                  <FormInput
+                    label="Cover Image URL"
+                    name="cover_url"
+                    value={formData.cover_url}
+                    onChange={handleChange}
+                    icon={<Image size={16} />}
+                  />
+                  
+                  {formData.cover_url && (
+                    <div className="mt-2 flex items-center">
+                      <div className="w-16 h-24 bg-[#1e263a] rounded overflow-hidden mr-3">
+                        <img
+                          src={formData.cover_url}
+                          alt="Cover preview"
+                          className="w-full h-full object-cover"
+                          onError={(e) => {
+                            e.currentTarget.style.display = 'none';
+                            e.currentTarget.parentElement!.classList.add('flex', 'items-center', 'justify-center', 'bg-indigo-900/30');
+                            const icon = document.createElement('div');
+                            icon.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-indigo-400"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"></path></svg>';
+                            e.currentTarget.parentElement!.appendChild(icon);
+                          }}
+                        />
+                      </div>
+                      <span className="text-sm text-gray-400">Cover preview</span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="md:col-span-2">
+                  <FormTextarea
+                    label="Description"
+                    name="description"
+                    value={formData.description}
+                    onChange={handleChange}
+                    icon={<FileText size={16} />}
+                    rows={3}
+                  />
+                </div>
+
+                <div>
+                  <FormInput
+                    label="Rating (0-5)"
+                    name="rating"
+                    value={formData.rating}
+                    type="number"
+                    onChange={handleChange}
+                    icon={<Star size={16} />}
+                    min={0}
+                    max={5}
+                    step={0.1}
+                  />
+                </div>
+
+                <div>
+                  <FormInput
+                    label="Borrow Count"
+                    name="borrow_count"
+                    value={formData.borrow_count}
+                    type="number"
+                    onChange={handleChange}
+                    icon={<Repeat size={16} />}
+                    min={0}
+                  />
+                </div>
+
+                <div className="md:col-span-2">
+                  <FormTextarea
+                    label="Summary"
+                    name="summary"
+                    value={formData.summary}
+                    onChange={handleChange}
+                    icon={<Bookmark size={16} />}
+                    rows={3}
+                  />
+                </div>
+
+                <div>
+                  <FormInput
+                    label="Authors (comma-separated)"
+                    name="authors_string"
+                    value={formData.authors?.join(', ')}
+                    onChange={(e) => handleArrayChange('authors', e.target.value)}
+                    icon={<Users size={16} />}
+                    required
+                  />
+                </div>
+
+                <div>
+                  <FormInput
+                    label="Categories (comma-separated)"
+                    name="categories_string"
+                    value={formData.categories?.join(', ')}
+                    onChange={(e) => handleArrayChange('categories', e.target.value)}
+                    icon={<Tag size={16} />}
+                  />
+                </div>
+
+                <div>
+                  <FormInput
+                    label="Total Books"
+                    name="total_books"
+                    value={formData.total_books}
+                    type="number"
+                    onChange={handleChange}
+                    icon={<Hash size={16} />}
+                    min={0}
+                    required
+                  />
+                </div>
+
+                <div>
+                  <FormInput
+                    label="Available Books"
+                    name="available_books"
+                    value={formData.available_books}
+                    type="number"
+                    onChange={handleChange}
+                    icon={<Book size={16} />}
+                    min={0}
+                    max={formData.total_books}
+                    required
+                  />
+                </div>
+
+                <div className="md:col-span-2">
+                  <div className="flex items-center p-3 bg-[#1e263a] border border-[#2a2f42] rounded-lg">
+                    <input
+                      type="checkbox"
+                      id="featured_book"
+                      name="featured_book"
+                      checked={formData.featured_book || false}
+                      onChange={handleChange}
+                      className="h-4 w-4 bg-[#252b3d] border-[#2a2f42] rounded checked:bg-indigo-500 checked:border-indigo-500 focus:ring-indigo-400 focus:ring-opacity-25"
+                    />
+                    <label htmlFor="featured_book" className="ml-2 text-sm text-gray-300">
+                      Feature this book on the homepage
+                    </label>
+                  </div>
+                </div>
+
+                <div className="md:col-span-2 flex justify-end gap-4 mt-4">
+                  <button
+                    type="button"
+                    onClick={() => navigate('/admin/books')}
+                    className="flex items-center px-4 py-2 bg-[#252b3d] text-gray-300 rounded-lg hover:bg-[#2a314a] transition-colors"
+                    disabled={submitting}
+                  >
+                    <X size={16} className="mr-2" /> Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="flex items-center px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-70 disabled:cursor-not-allowed"
+                    disabled={submitting}
+                  >
+                    {submitting ? (
+                      <>
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                        Saving...
+                      </>
+                    ) : (
+                      <>
+                        <Save size={16} className="mr-2" /> Save Changes
+                      </>
+                    )}
+                  </button>
+                </div>
               </div>
             </form>
-          )}
+          </div>
         </div>
       </div>
     </Layout>
