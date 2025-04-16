@@ -1,23 +1,24 @@
-// App.tsx
-import { Routes, Route } from 'react-router-dom';
-import { ToastContainer } from 'react-toastify';
-import 'react-toastify/dist/ReactToastify.css';
-import { AuthProvider } from './context/AuthContext';
-import ProtectedRoute from './components/ProtectedRoute';
-import Home from './pages/Home';
-import Search from './pages/SearchPage';
-import Reservations from './pages/Reservations';
-import Navbar from './pages/Navbar';
-import BackgroundWrapper from './components/ui/BackgroundWrapper';
-import LibraryLoginPage from './pages/LibraryLoginPage';
-import LibraryRegistrationPage from './pages/LibraryRegistrationPage';
-import BookDetails from './pages/BookDetails';
-import AdminDashboard from './pages/admin/AdminDashboard';
-import BooksPage from './pages/admin/Books';
-import UsersTable from './pages/admin/Users';
-import EditBookPage from './pages/admin/EditBook';
-import AdminRequestsPage from './pages/admin/Requests';
-import AdminRentalsPage from './pages/admin/AdminRentalsPage';
+import { Routes, Route } from "react-router-dom";
+import { ToastContainer } from "react-toastify";
+import "react-toastify/dist/ReactToastify.css";
+import { AuthProvider } from "./context/AuthContext";
+import ProtectedRoute from "./components/ProtectedRoute";
+import Home from "./pages/Home";
+import Search from "./pages/SearchPage";
+import Reservations from "./pages/Reservations";
+import Navbar from "./pages/Navbar";
+import BackgroundWrapper from "./components/ui/BackgroundWrapper";
+import LibraryLoginPage from "./pages/LibraryLoginPage";
+import LibraryRegistrationPage from "./pages/LibraryRegistrationPage";
+import BookDetails from "./pages/BookDetails";
+import AdminDashboard from "./pages/admin/AdminDashboard";
+import BooksPage from "./pages/admin/Books";
+import UsersTable from "./pages/admin/Users";
+import EditBookPage from "./pages/admin/EditBook";
+import AdminRequestsPage from "./pages/admin/Requests";
+import AdminRentalsPage from "./pages/admin/AdminRentalsPage";
+import CreateBookPage from "./pages/admin/CreateBookPage";
+import AccountRequestsPage from "./pages/admin/AccountRequestsPage";
 
 function App() {
   return (
@@ -62,9 +63,10 @@ function App() {
           <Route
             path="/admin"
             element={
-            <ProtectedRoute requiredRole="admin">
-              <AdminDashboard />
-            </ProtectedRoute>}
+              <ProtectedRoute requiredRole="admin">
+                <AdminDashboard />
+              </ProtectedRoute>
+            }
           />
           <Route
             path="/admin/users"
@@ -78,7 +80,7 @@ function App() {
             path="/admin/books"
             element={
               <ProtectedRoute requiredRole="admin">
-                <BooksPage/>
+                <BooksPage />
               </ProtectedRoute>
             }
           />
@@ -86,7 +88,7 @@ function App() {
             path="/admin/edit/:id"
             element={
               <ProtectedRoute requiredRole="admin">
-                <EditBookPage/>
+                <EditBookPage />
               </ProtectedRoute>
             }
           />
@@ -94,7 +96,7 @@ function App() {
             path="/admin/requests"
             element={
               <ProtectedRoute requiredRole="admin">
-                <AdminRequestsPage/>
+                <AdminRequestsPage />
               </ProtectedRoute>
             }
           />
@@ -102,12 +104,35 @@ function App() {
             path="/admin/rentals"
             element={
               <ProtectedRoute requiredRole="admin">
-                <AdminRentalsPage/>
+                <AdminRentalsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/books/create"
+            element={
+              <ProtectedRoute requiredRole="admin">
+                <CreateBookPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/account-requests"
+            element={
+              <ProtectedRoute requiredRole="admin">
+                <AccountRequestsPage />
               </ProtectedRoute>
             }
           />
 
-          <Route path="*" element={<div className="container mx-auto px-8 py-8 text-white">Page Not Found</div>} />
+          <Route
+            path="*"
+            element={
+              <div className="container mx-auto px-8 py-8 text-white">
+                Page Not Found
+              </div>
+            }
+          />
         </Routes>
         <ToastContainer position="top-right" autoClose={3000} />
       </BackgroundWrapper>
