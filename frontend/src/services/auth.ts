@@ -26,7 +26,12 @@ interface LoginResponse {
     user: User;
 }
 
-export const register = async (data: RegisterData): Promise<{ message: string }> => {
+interface RegisterResponse {
+    message: string;
+    request_id?: number;
+}
+
+export const register = async (data: RegisterData): Promise<RegisterResponse> => {
     const response = await axios.post(`${API_URL}/register`, data);
     return response.data;
 };

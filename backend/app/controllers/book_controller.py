@@ -53,6 +53,27 @@ def get_books():
         'total_pages': (total_count + per_page - 1) // per_page
     })
 
+
+@book_controller.route('/books', methods=['POST'])
+@jwt_required()
+def create_book():
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+
+        logger.debug("Creating new book with data: %s", data)
+        book = BookService.create_book(data)
+        
+        logger.debug("Book created: %s", book.title)
+        return jsonify(book.to_dict()), 201
+    except ValueError as e:
+        logger.error("Error creating book: %s", str(e))
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        logger.error("Internal error creating book: %s", str(e))
+        return jsonify({'error': 'Internal server error'}), 500
+
 @book_controller.route('/books/category', methods=['GET'])
 @jwt_required()
 def get_books_by_category():
