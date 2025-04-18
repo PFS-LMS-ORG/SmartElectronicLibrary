@@ -6,13 +6,14 @@ interface BookCoverProps {
   id: number;
   title: string;
   cover_url: string;
-  size?: 'sm' | 'md' | 'lg';
+  size?: 'xs' | 'sm' | 'md' | 'lg';
   className?: string;
 }
 
 const BookCover: React.FC<BookCoverProps> = ({id, cover_url, title, size = 'md', className = '' }) => {
   // Size classes
   const sizeClasses = {
+    xs: "h-32", // Extra small for grid view
     sm: "h-64", // Small for grid view
     md: "h-80", // Medium for list view
     lg: "h-96", // Large for detail view
@@ -24,7 +25,7 @@ const BookCover: React.FC<BookCoverProps> = ({id, cover_url, title, size = 'md',
       <img 
         src={cover_url} 
         alt={title} 
-        className={`rounded-lg object-cover w-full ${sizeClasses[size]} transition-transform duration-300 hover:scale-105`}
+        className={`rounded-lg object-cover w-full h-full ${sizeClasses[size]} transition-transform duration-300 hover:scale-105`}
       />
     </Link>
   );
