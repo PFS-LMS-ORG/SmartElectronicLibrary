@@ -195,8 +195,8 @@ class RentalRequestService:
             rental = RentalService.create_rental(request.user_id, request.book_id, update_book=True)
             
             # Update book availability
-            book.available_books -= 1
-            book.borrow_count += 1
+            # book.available_books -= 1
+            # book.borrow_count += 1
 
             db.session.commit()
             return request.to_dict()

@@ -231,3 +231,25 @@ def get_my_rentals():
         return jsonify({'error': str(e)}), 400
     except Exception as e:
         return jsonify({'error': 'Internal server error'}), 500
+    
+
+@rental_controller.route('/rentals/specific_rental/<int:user_id>/<int:book_id>', methods=['GET'])
+@jwt_required()
+def get_specific_rental(user_id, book_id):
+    """
+    Get a specific rental by user_id and book_id.
+    """
+    try:
+        user = User.query.get(user_id)
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
+        
+        rental = RentalService.get_user_book_rental(user_id, book_id)
+        if not rental:
+            return jsonify({'error': 'Rental not found'}), 404
+        
+        return jsonify(rental.to_dict()), 200
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        return jsonify({'error': 'Internal server error'}), 500

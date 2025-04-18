@@ -179,6 +179,20 @@ class RentalService:
         if not rental:
             raise ValueError("Rental not found")
         return rental
+    
+    @staticmethod
+    def get_user_book_rental(user_id,book_id):
+        """
+        Fetches the latest rental for a specific user and book.
+        """
+        user = User.query.get(user_id)
+        if not user:
+            raise ValueError("User not found")
+        book = Book.query.get(book_id)
+        if not book:
+            raise ValueError("Book not found")
+        rental = Rental.query.filter_by(user_id=user_id, book_id=book_id).order_by(Rental.rented_at.desc()).first()
+        return rental
 
     @staticmethod
     def get_user_rentals(user_id):

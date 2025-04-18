@@ -113,13 +113,21 @@ const UserProfilePage: React.FC = () => {
   };
   
   const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return new Intl.DateTimeFormat('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: '2-digit',
-    }).format(date);
-  };
+  if (!dateString) return 'Invalid date';
+
+  const date = new Date(dateString);
+
+  // Check if the date is valid
+  if (isNaN(date.getTime())) {
+    return 'Invalid date';
+  }
+
+  return new Intl.DateTimeFormat('en-US', {
+    year: 'numeric',
+    month: 'short',
+    day: '2-digit',
+  }).format(date);
+};
   
   const calculateDaysLeft = (rentalDate: string) => {
     const rentedDate = new Date(rentalDate);

@@ -36,17 +36,18 @@ const BookDetails = () => {
   const [userRequest, setUserRequest] = useState<RentalRequest | null>(null); // Track user's request
   const [borrowLoading, setBorrowLoading] = useState(false); // Track borrow action
   const { isAuthenticated, isLoading: isAuthLoading, logout, user } = useAuth();
+  const [activeRental, setActiveRental] = useState(null);
   const navigate = useNavigate();
 
   useEffect(() => {
     if (isAuthLoading) return;
-
+  
     if (!isAuthenticated) {
       console.log("User not authenticated, redirecting to login");
       navigate("/login");
       return;
     }
-
+  
     const fetchBookAndRequest = async () => {
       setLoading(true);
       try {
@@ -54,7 +55,7 @@ const BookDetails = () => {
         if (!token) {
           throw new Error("No token found");
         }
-
+  
         // Fetch book details
         console.log("Fetching book with token:", token.slice(0, 20) + "...");
         const bookResponse = await axios.get(`/api/books/${id}`, {
@@ -62,20 +63,23 @@ const BookDetails = () => {
         });
         console.log("Book response:", bookResponse.data);
         setBook(bookResponse.data);
-
+  
         // Fetch user's rental request for this book
         const requestResponse = await axios.get(`/api/rental_requests/my_requests?page=1&per_page=10`, {
           headers: { Authorization: `Bearer ${token}` },
         });
-        const requests: RentalRequest[] = requestResponse.data.requests;
+        const requests = requestResponse.data.requests;
         const existingRequest = requests.find(
-          (req: RentalRequest) => req.book_id === Number(id) && req.status !== "rejected"
+          (req) => req.book_id === Number(id) && req.status === "pending"
         );
         setUserRequest(existingRequest || null);
-
+  
+        // Check if the user currently has this book rented
+        await checkRentalStatus();
+  
         // Fetch related books
         fetchRelatedBooks(bookResponse.data.categories, bookResponse.data.id);
-      } catch (error: any) {
+      } catch (error) {
         console.error("Error fetching data:", error.response?.data || error.message);
         if (error.response?.status === 401) {
           console.log("Unauthorized: Logging out and redirecting to login");
@@ -87,9 +91,39 @@ const BookDetails = () => {
         setLoading(false);
       }
     };
-
+  
     fetchBookAndRequest();
-  }, [id, isAuthenticated, isAuthLoading, logout, navigate]);
+  }, [id, isAuthenticated, isAuthLoading, logout, navigate, user?.id]);
+
+  const checkRentalStatus = async () => {
+    try {
+      const token = localStorage.getItem("token");
+      if (!token) {
+        throw new Error("No token found");
+      }
+  
+      // First check if user has the book rented
+      const rentalResponse = await axios.get(`/api/rentals/specific_rental/${user.id}/${id}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      
+      // If we got a response, the user has rented this book before
+      console.log("Rental status response:", rentalResponse.data);
+      
+      // Check if the book is still with the user (returned_at is null)
+      if (rentalResponse.data && rentalResponse.data.returned_at === null) {
+        setActiveRental(rentalResponse.data);
+      } else {
+        setActiveRental(null);
+      }
+    } catch (error) {
+      // 404 is expected if the user has never rented this book
+      if (error.response?.status !== 404) {
+        console.error("Error checking rental status:", error.response?.data || error.message);
+      }
+      setActiveRental(null);
+    }
+  };
 
   const fetchRelatedBooks = async (categories: string[], bookId: number) => {
     setRelatedLoading(true);
@@ -133,10 +167,7 @@ const BookDetails = () => {
       // Update userRequest state
       setUserRequest({ id: response.data.id, book_id: book.id, status: "pending" });
 
-      // Optional: Update available_books (if backend doesn't auto-update)
-      setBook((prev) =>
-        prev ? { ...prev, available_books: prev.available_books - 1 } : prev
-      );
+      
 
       toast.success("Rental request created successfully! Awaiting admin approval.");
     } catch (error: any) {
@@ -304,46 +335,46 @@ const BookDetails = () => {
 
             {/* Borrow Button */}
             <motion.button
-              className={`mt-6 w-full max-w-sm py-4 px-6 rounded-lg font-medium text-lg relative overflow-hidden group ${
-                book.available_books === 0 || userRequest || borrowLoading
-                  ? "bg-gray-600 cursor-not-allowed"
-                  : ""
-              }`}
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 0.4, duration: 0.6 }}
-              onClick={handleBorrow}
-              whileHover={{ scale: book.available_books === 0 || userRequest || borrowLoading ? 1 : 1.02 }}
-              whileTap={{ scale: book.available_books === 0 || userRequest || borrowLoading ? 1 : 0.98 }}
-              disabled={book.available_books === 0 || !!userRequest || borrowLoading}
-            >
-              {/* Button background with gradient */}
-              <div
-                className={`absolute inset-0 bg-gradient-to-r ${
-                  book.available_books === 0 || userRequest || borrowLoading ? "bg-gray-600" : getGradient()
-                } transition-transform duration-500`}
-              ></div>
+  className={`mt-6 w-full max-w-sm py-4 px-6 rounded-lg font-medium text-lg relative overflow-hidden group ${
+    book.available_books === 0 || activeRental || userRequest?.status === "pending" || borrowLoading
+      ? "bg-gray-600 cursor-not-allowed"
+      : ""
+  }`}
+  initial={{ opacity: 0 }}
+  animate={{ opacity: 1 }}
+  transition={{ delay: 0.4, duration: 0.6 }}
+  onClick={handleBorrow}
+  whileHover={{ scale: book.available_books === 0 || activeRental || userRequest?.status === "pending" || borrowLoading ? 1 : 1.02 }}
+  whileTap={{ scale: book.available_books === 0 || activeRental || userRequest?.status === "pending" || borrowLoading ? 1 : 0.98 }}
+  disabled={book.available_books === 0 || activeRental || userRequest?.status === "pending" || borrowLoading}
+>
+  {/* Button background with gradient */}
+  <div
+    className={`absolute inset-0 bg-gradient-to-r ${
+      book.available_books === 0 || activeRental || userRequest?.status === "pending" || borrowLoading ? "bg-gray-600" : getGradient()
+    } transition-transform duration-500`}
+  ></div>
 
-              {/* Button hover animation */}
-              <div
-                className={`absolute inset-0 opacity-0 ${
-                  book.available_books === 0 || userRequest || borrowLoading ? "" : "group-hover:opacity-30"
-                } bg-white transition-opacity duration-500`}
-              ></div>
+  {/* Button hover animation */}
+  <div
+    className={`absolute inset-0 opacity-0 ${
+      book.available_books === 0 || activeRental || userRequest?.status === "pending" || borrowLoading ? "" : "group-hover:opacity-30"
+    } bg-white transition-opacity duration-500`}
+  ></div>
 
-              {/* Button text */}
-              <span className="relative z-10">
-                {borrowLoading
-                  ? "Requesting..."
-                  : userRequest
-                  ? userRequest.status === "pending"
-                    ? "Request Pending"
-                    : "Book Borrowed"
-                  : book.available_books === 0
-                  ? "Not Available"
-                  : "Borrow Now"}
-              </span>
-            </motion.button>
+  {/* Button text */}
+  <span className="relative z-10">
+    {borrowLoading
+      ? "Requesting..."
+      : activeRental
+      ? "Currently Borrowed"
+      : userRequest?.status === "pending"
+      ? "Request Pending"
+      : book.available_books === 0
+      ? "Not Available"
+      : "Borrow Now"}
+  </span>
+</motion.button>
           </motion.div>
 
           {/* Right Column - Book Details */}
