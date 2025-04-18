@@ -341,7 +341,7 @@ const AdminRequestsPage: React.FC = () => {
                               {request.book ? (
                                 <div className="flex items-center">
                                   <div
-                                    className={`w-10 h-14 ${getCoverColor(
+                                    className={`w-10 h-14 flex-shrink-0 ${getCoverColor(
                                       request.book.title
                                     )} rounded flex items-center justify-center mr-3 text-white text-xs shadow-inner border border-gray-600`}
                                   >
@@ -371,7 +371,7 @@ const AdminRequestsPage: React.FC = () => {
                                   {request.book.categories.slice(0, 2).map((category, idx) => (
                                     <span 
                                       key={idx} 
-                                      className="inline-block bg-gray-700 rounded-full px-2 py-0.5 text-xs text-gray-300"
+                                      className="inline-block bg-gray-700 rounded-xs px-2 py-0.5 text-xs text-gray-300"
                                     >
                                       {category}
                                     </span>
