@@ -19,6 +19,7 @@ import AdminRequestsPage from "./pages/admin/Requests";
 import AdminRentalsPage from "./pages/admin/AdminRentalsPage";
 import CreateBookPage from "./pages/admin/CreateBookPage";
 import AccountRequestsPage from "./pages/admin/AccountRequestsPage";
+import UserProfilePage from "./pages/UserProfilePage";
 
 function App() {
   return (
@@ -57,6 +58,14 @@ function App() {
             element={
               <ProtectedRoute>
                 <BookDetails />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/profile"
+            element={
+              <ProtectedRoute>
+                <UserProfilePage />
               </ProtectedRoute>
             }
           />
