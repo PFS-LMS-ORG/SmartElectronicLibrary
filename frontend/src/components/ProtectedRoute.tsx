@@ -2,6 +2,7 @@
 import React from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import BackgroundWrapper from './ui/BackgroundWrapper';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -9,7 +10,15 @@ interface ProtectedRouteProps {
 }
 
 const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, requiredRole }) => {
-  const { isAuthenticated, user } = useAuth();
+  const { isAuthenticated, user, isLoading } = useAuth();
+
+  if (isLoading) {
+    return (
+      <BackgroundWrapper isLoading={true} loadingMessage="Checking authorization...">
+        <div className="h-screen"></div>
+      </BackgroundWrapper>
+    );
+  }
 
   if (!isAuthenticated) {
     console.log('User not authenticated, redirecting to login');
