@@ -618,7 +618,7 @@ const AdminRentalsPage: React.FC = () => {
                               {rental.book ? (
                                 <div className="flex items-center">
                                   <div
-                                    className={`w-10 h-14 ${getCoverColor(rental.book.title)} rounded flex items-center justify-center mr-3 text-white text-xs`}
+                                    className={`w-10 h-14 flex-shrink-0 ${getCoverColor(rental.book.title)} rounded flex items-center justify-center mr-3 text-white text-xs`}
                                   >
                                     {rental.book.cover_url ? (
                                       <img
