@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { useAuth } from '../context/AuthContext';
 import { Star, BookOpen, TrendingUp, Calendar, ChevronRight, Loader2, Book, Users } from 'lucide-react';
 import { toast } from 'react-toastify';
+import Chatbot from './Chatbot';
 
 interface Book {
   id: number;
@@ -23,6 +24,12 @@ interface Book {
   created_at?: string;
 }
 
+interface RentalRequest {
+  id: number;
+  book_id: number;
+  status: "pending" | "approved" | "rejected";
+}
+
 const Home = () => {
   const [featuredBook, setFeaturedBook] = useState<Book | null>(null);
   const [popularBooks, setPopularBooks] = useState<Book[]>([]);
@@ -33,12 +40,12 @@ const Home = () => {
   const [activeCategory, setActiveCategory] = useState<string>('All');
   const [filteredPopularBooks, setFilteredPopularBooks] = useState<Book[]>([]);
   const [allCategories, setAllCategories] = useState<string[]>(['All']);
-  const { isAuthenticated, isLoading: isAuthLoading } = useAuth();
+  const { isAuthenticated, isLoading: isAuthLoading, user } = useAuth();
   const [borrowLoading, setBorrowLoading] = useState<number | null>(null);
   const [userRequests, setUserRequests] = useState<Record<number, string>>({});
+  const [activeRental, setActiveRental] = useState<any>(null); // Track active rental for featured book
 
   const navigate = useNavigate();
-
 
   // Extract unique categories from books
   useEffect(() => {
@@ -68,10 +75,46 @@ const Home = () => {
     }
   }, [activeCategory, popularBooks]);
 
-  useEffect(() => {
-    if (isAuthLoading) {
-      return;
+  // Check rental status for the featured book
+  const checkRentalStatus = async (bookId: number) => {
+    try {
+      const token = localStorage.getItem('token');
+      if (!token || !user) {
+        throw new Error('No token or user found');
+      }
+
+      const rentalResponse = await axios.get(`/api/rentals/specific_rental/${user.id}/${bookId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      // If the book is currently rented (returned_at is null), set activeRental
+      if (rentalResponse.data && rentalResponse.data.returned_at === null) {
+        setActiveRental(rentalResponse.data);
+      } else {
+        setActiveRental(null);
+        // Clear the request from userRequests if it exists
+        setUserRequests(prev => {
+          const updated = { ...prev };
+          delete updated[bookId];
+          return updated;
+        });
+      }
+    } catch (error: any) {
+      if (error.response?.status !== 404) {
+        console.error('Error checking rental status:', error.response?.data || error.message);
+      }
+      setActiveRental(null);
+      // Clear the request from userRequests if no active rental
+      setUserRequests(prev => {
+        const updated = { ...prev };
+        delete updated[bookId];
+        return updated;
+      });
     }
+  };
+
+  useEffect(() => {
+    if (isAuthLoading) return;
 
     if (!isAuthenticated) {
       navigate('/login');
@@ -82,14 +125,10 @@ const Home = () => {
       try {
         setIsLoadingPopular(true);
         const token = localStorage.getItem('token');
-        if (!token) {
-          throw new Error('No token found');
-        }
+        if (!token) throw new Error('No token found');
         
         const response = await axios.get('/api/books/popular', {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
+          headers: { Authorization: `Bearer ${token}` },
         });
         
         setPopularBooks(response.data || []);
@@ -105,14 +144,10 @@ const Home = () => {
       try {
         setIsLoadingFeatured(true);
         const token = localStorage.getItem('token');
-        if (!token) {
-          throw new Error('No token found');
-        }
+        if (!token) throw new Error('No token found');
         
         const response = await axios.get('/api/books/featured', {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
+          headers: { Authorization: `Bearer ${token}` },
         });
         
         setFeaturedBook(response.data || null);
@@ -128,19 +163,11 @@ const Home = () => {
       try {
         setIsLoadingNewest(true);
         const token = localStorage.getItem('token');
-        if (!token) {
-          throw new Error('No token found');
-        }
+        if (!token) throw new Error('No token found');
         
-        // Using sort parameter to get the newest books
         const response = await axios.get('/api/books', {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-          params: {
-            sort: '-created_at',
-            per_page: 5
-          }
+          headers: { Authorization: `Bearer ${token}` },
+          params: { sort: '-created_at', per_page: 5 }
         });
         
         setNewestBooks(response.data.books || []);
@@ -155,19 +182,15 @@ const Home = () => {
     const fetchUserRentalRequests = async () => {
       try {
         const token = localStorage.getItem('token');
-        if (!token) {
-          throw new Error('No token found');
-        }
+        if (!token) throw new Error('No token found');
         
         const response = await axios.get('/api/rental_requests/my_requests?page=1&per_page=100', {
           headers: { Authorization: `Bearer ${token}` },
         });
         
-        // Create a record of bookId -> request status
         const requestMap: Record<number, string> = {};
         if (response.data.requests && Array.isArray(response.data.requests)) {
           response.data.requests.forEach((req: any) => {
-            // Only track non-rejected requests
             if (req.status !== 'rejected') {
               requestMap[req.book_id] = req.status;
             }
@@ -185,7 +208,13 @@ const Home = () => {
     fetchUserRentalRequests();
   }, [isAuthenticated, isAuthLoading, navigate]);
 
-  // Function to render star ratings
+  // Check rental status for featured book after it's loaded
+  useEffect(() => {
+    if (featuredBook && user) {
+      checkRentalStatus(featuredBook.id);
+    }
+  }, [featuredBook, user]);
+
   const renderRating = (rating: number) => {
     const fullStars = Math.floor(rating);
     const hasHalfStar = rating % 1 >= 0.5;
@@ -217,31 +246,24 @@ const Home = () => {
   };
 
   const handleBorrowRequest = async (bookId: number) => {
-    // If already borrowing or the book is already requested, don't do anything
-    if (borrowLoading === bookId || userRequests[bookId]) return;
+    if (borrowLoading === bookId || userRequests[bookId] || activeRental) return;
     
     setBorrowLoading(bookId);
     try {
       const token = localStorage.getItem('token');
-      if (!token) {
-        throw new Error('No token found');
-      }
+      if (!token) throw new Error('No token found');
   
-      // Create a rental request for this book
       const response = await axios.post(
         '/api/rental_requests',
         { book_id: bookId },
         { headers: { Authorization: `Bearer ${token}` } }
       );
       
-      // Update the user requests map with this new request
       setUserRequests(prev => ({
         ...prev,
         [bookId]: 'pending'
       }));
       
-      // Optionally update the book's available count in the UI
-      // For example, if bookId is in popularBooks array:
       setPopularBooks(prev => 
         prev.map(book => 
           book.id === bookId 
@@ -250,21 +272,21 @@ const Home = () => {
         )
       );
       
-      // Same for featured book if needed
       if (featuredBook && featuredBook.id === bookId) {
         setFeaturedBook(prev => 
           prev ? { ...prev, available_books: Math.max(0, prev.available_books - 1) } : prev
         );
       }
       
-      // Show success message
       toast.success('Rental request created successfully! Awaiting admin approval.');
+
+      // Re-check rental status after making a request
+      await checkRentalStatus(bookId);
     } catch (error: any) {
       console.error('Error creating rental request:', error.response?.data || error.message);
       const errorMsg = error.response?.data?.error || 'Failed to create rental request.';
       toast.error(errorMsg);
       if (error.response?.status === 401) {
-        // Handle authentication error
         navigate('/login');
       }
     } finally {
@@ -366,25 +388,25 @@ const Home = () => {
                     </div>
                   </div>
                   
-                  <p className="text-gray-300 mb-8 ">{featuredBook.summary}</p>
+                  <p className="text-gray-300 mb-8 line-clamp-3">{featuredBook.description}</p>
                   
                   <div className="flex flex-wrap gap-3">
-                    {/* <Button
+                    <Button
                       onClick={() => handleBorrowRequest(featuredBook.id)}
                       className="px-6 py-6 bg-amber-500 hover:bg-amber-600 text-gray-900 font-medium transition-colors shadow-lg"
-                      disabled={featuredBook.available_books <= 0 || !!userRequests[featuredBook.id] || borrowLoading === featuredBook.id}
+                      disabled={featuredBook.available_books <= 0 || activeRental || userRequests[featuredBook.id] === 'pending' || borrowLoading === featuredBook.id}
                     >
                       <BookOpen className="mr-2 h-5 w-5" />
                       {borrowLoading === featuredBook.id
                         ? "Requesting..."
-                        : userRequests[featuredBook.id]
-                        ? userRequests[featuredBook.id] === "pending"
-                          ? "Request Pending"
-                          : "Book Borrowed"
+                        : activeRental
+                        ? "Currently Borrowed"
+                        : userRequests[featuredBook.id] === 'pending'
+                        ? "Request Pending"
                         : featuredBook.available_books === 0
                         ? "Currently Unavailable"
                         : "Borrow This Book"}
-                    </Button> */}
+                    </Button>
                     
                     <Button
                       onClick={() => handleBookClick(featuredBook.id)}
@@ -525,8 +547,6 @@ const Home = () => {
                       <span className="text-xs text-gray-400">
                         {book.available_books}/{book.total_books}
                       </span>
-                      
-                      {/* Add borrow button inline */}
                       {book.available_books > 0 && !userRequests[book.id] ? (
                         <button 
                           onClick={(e) => {
@@ -702,6 +722,7 @@ const Home = () => {
             )}
           </div>
         </section>
+        <Chatbot />
       </main>
     </BackgroundWrapper>
   );
