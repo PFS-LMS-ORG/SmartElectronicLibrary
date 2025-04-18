@@ -366,10 +366,10 @@ const Home = () => {
                     </div>
                   </div>
                   
-                  <p className="text-gray-300 mb-8 line-clamp-3">{featuredBook.description}</p>
+                  <p className="text-gray-300 mb-8 ">{featuredBook.summary}</p>
                   
                   <div className="flex flex-wrap gap-3">
-                    <Button
+                    {/* <Button
                       onClick={() => handleBorrowRequest(featuredBook.id)}
                       className="px-6 py-6 bg-amber-500 hover:bg-amber-600 text-gray-900 font-medium transition-colors shadow-lg"
                       disabled={featuredBook.available_books <= 0 || !!userRequests[featuredBook.id] || borrowLoading === featuredBook.id}
@@ -384,7 +384,7 @@ const Home = () => {
                         : featuredBook.available_books === 0
                         ? "Currently Unavailable"
                         : "Borrow This Book"}
-                    </Button>
+                    </Button> */}
                     
                     <Button
                       onClick={() => handleBookClick(featuredBook.id)}

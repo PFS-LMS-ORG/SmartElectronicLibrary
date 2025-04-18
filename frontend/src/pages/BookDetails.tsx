@@ -335,25 +335,25 @@ const BookDetails = () => {
 
             {/* Borrow Button */}
             <motion.button
-  className={`mt-6 w-full max-w-sm py-4 px-6 rounded-lg font-medium text-lg relative overflow-hidden group ${
-    book.available_books === 0 || activeRental || userRequest?.status === "pending" || borrowLoading
-      ? "bg-gray-600 cursor-not-allowed"
-      : ""
-  }`}
-  initial={{ opacity: 0 }}
-  animate={{ opacity: 1 }}
-  transition={{ delay: 0.4, duration: 0.6 }}
-  onClick={handleBorrow}
-  whileHover={{ scale: book.available_books === 0 || activeRental || userRequest?.status === "pending" || borrowLoading ? 1 : 1.02 }}
-  whileTap={{ scale: book.available_books === 0 || activeRental || userRequest?.status === "pending" || borrowLoading ? 1 : 0.98 }}
-  disabled={book.available_books === 0 || activeRental || userRequest?.status === "pending" || borrowLoading}
->
-  {/* Button background with gradient */}
-  <div
-    className={`absolute inset-0 bg-gradient-to-r ${
-      book.available_books === 0 || activeRental || userRequest?.status === "pending" || borrowLoading ? "bg-gray-600" : getGradient()
-    } transition-transform duration-500`}
-  ></div>
+              className={`mt-6 w-full max-w-sm py-4 px-6 rounded-lg font-medium text-lg relative overflow-hidden group ${
+                book.available_books === 0 || activeRental || userRequest?.status === "pending" || borrowLoading
+                  ? "bg-gray-600 cursor-not-allowed"
+                  : ""
+              }`}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.4, duration: 0.6 }}
+              onClick={handleBorrow}
+              whileHover={{ scale: book.available_books === 0 || activeRental || userRequest?.status === "pending" || borrowLoading ? 1 : 1.02 }}
+              whileTap={{ scale: book.available_books === 0 || activeRental || userRequest?.status === "pending" || borrowLoading ? 1 : 0.98 }}
+              disabled={book.available_books === 0 || activeRental || userRequest?.status === "pending" || borrowLoading}
+            >
+              {/* Button background with gradient */}
+              <div
+                className={`absolute inset-0 bg-gradient-to-r ${
+                  book.available_books === 0 || activeRental || userRequest?.status === "pending" || borrowLoading ? "bg-gray-600" : getGradient()
+                } transition-transform duration-500`}
+    ></div>
 
   {/* Button hover animation */}
   <div
