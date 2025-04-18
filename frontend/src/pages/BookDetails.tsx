@@ -70,7 +70,7 @@ const BookDetails = () => {
         });
         const requests = requestResponse.data.requests;
         const existingRequest = requests.find(
-          (req) => req.book_id === Number(id) && req.status === "pending"
+          (req: RentalRequest) => req.book_id === Number(id) && req.status === "pending"
         );
         setUserRequest(existingRequest || null);
   
@@ -79,7 +79,7 @@ const BookDetails = () => {
   
         // Fetch related books
         fetchRelatedBooks(bookResponse.data.categories, bookResponse.data.id);
-      } catch (error) {
+      } catch (error: any) {
         console.error("Error fetching data:", error.response?.data || error.message);
         if (error.response?.status === 401) {
           console.log("Unauthorized: Logging out and redirecting to login");
@@ -103,7 +103,7 @@ const BookDetails = () => {
       }
   
       // First check if user has the book rented
-      const rentalResponse = await axios.get(`/api/rentals/specific_rental/${user.id}/${id}`, {
+      const rentalResponse = await axios.get(`/api/rentals/specific_rental/${user?.id}/${id}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       
@@ -116,7 +116,7 @@ const BookDetails = () => {
       } else {
         setActiveRental(null);
       }
-    } catch (error) {
+    } catch (error: any) {
       // 404 is expected if the user has never rented this book
       if (error.response?.status !== 404) {
         console.error("Error checking rental status:", error.response?.data || error.message);
