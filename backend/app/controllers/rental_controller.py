@@ -39,27 +39,7 @@ def create_rental():
     except Exception as e:
         return jsonify({'error': 'Internal server error'}), 500
 
-# @rental_controller.route('/rentals', methods=['GET'])
-# @jwt_required()
-# def get_all_rentals():
-#     """
-#     Get all rentals with pagination (admin only).
-#     Query params: page (default=1), per_page (default=10)
-#     """
-#     try:
-#         admin_check = check_admin()
-#         if admin_check:
-#             return admin_check
 
-#         page = int(request.args.get('page', 1))
-#         per_page = int(request.args.get('per_page', 10))
-        
-#         result = RentalService.get_all_rentals(page, per_page)
-#         return jsonify(result), 200
-#     except ValueError as e:
-#         return jsonify({'error': str(e)}), 400
-#     except Exception as e:
-#         return jsonify({'error': 'Internal server error'}), 500
 @rental_controller.route('/rentals', methods=['GET'])
 @jwt_required()
 def get_all_rentals():
