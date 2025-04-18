@@ -1,6 +1,7 @@
 // contexts/authcontext.tsx
 import React, { createContext, useState, useEffect, ReactNode } from 'react';
 import { getCurrentUser, login, logout as authLogout } from '../services/auth';
+import BackgroundWrapper from '../components/ui/BackgroundWrapper';
 
 interface User {
   id: number;
@@ -52,28 +53,46 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         console.log('No token, setting unauthenticated');
         setIsAuthenticated(false);
       }
-      console.log('Auth initialization complete, isLoading=false');
-      setIsLoading(false);
+      
+      // Add a small delay to ensure the loading animation is visible
+      setTimeout(() => {
+        console.log('Auth initialization complete, isLoading=false');
+        setIsLoading(false);
+      }, 800);
     };
     initializeAuth();
   }, []);
 
   const handleLogin = async (email: string, password: string) => {
     console.log('Logging in:', email);
-    const { user } = await login({ email, password });
-    console.log('Login successful, user:', user);
-    setUser({
-      ...user,
-      role: user.role as 'user' | 'admin', // Ensure role matches the expected type
-    });
-    setIsAuthenticated(true);
+    setIsLoading(true); // Show loading screen during login
+    try {
+      const { user } = await login({ email, password });
+      console.log('Login successful, user:', user);
+      setUser({
+        ...user,
+        role: user.role as 'user' | 'admin', // Ensure role matches the expected type
+      });
+      setIsAuthenticated(true);
+    } catch (error) {
+      console.error('Login failed:', error);
+      throw error; // Re-throw to be handled by the login component
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleLogout = () => {
     console.log('Logging out');
-    authLogout();
-    setUser(null);
-    setIsAuthenticated(false);
+    setIsLoading(true); // Show loading during logout
+    
+    // Small delay to show loading animation
+    setTimeout(() => {
+      authLogout();
+      setUser(null);
+      setIsAuthenticated(false);
+      setIsLoading(false);
+    }, 500);
   };
 
   // Role-based functions
@@ -91,7 +110,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   if (isLoading) {
     console.log('Rendering loading state');
-    return <div className="flex h-screen items-center justify-center bg-gray-100">Loading...</div>;
+    return (
+      <BackgroundWrapper isLoading={true} loadingMessage="Loading...">
+        <div className="h-screen"></div>
+      </BackgroundWrapper>
+    );
   }
 
   return (

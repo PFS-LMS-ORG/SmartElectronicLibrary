@@ -9,6 +9,7 @@ from app.controllers.auth_controller import auth_bp
 from app.controllers.user_controller import user_controller
 from app.controllers.rental_controller import rental_controller
 from app.controllers.account_requests_controller import account_requests_bp
+from app.controllers.chatbot_controller import chatbot_controller
 from dotenv import load_dotenv
 import os
 import logging
@@ -39,6 +40,7 @@ def create_app():
     app.register_blueprint(rental_controller)
     app.register_blueprint(auth_bp, url_prefix='/auth')
     app.register_blueprint(account_requests_bp, url_prefix='/admin')
+    app.register_blueprint(chatbot_controller, url_prefix='/chatbot')
 
     logger.debug("App creation complete")
     return app
