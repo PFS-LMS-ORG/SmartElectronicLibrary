@@ -1,13 +1,22 @@
-import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import axios from 'axios';
-import BackgroundWrapper from '@/components/ui/BackgroundWrapper';
-import BookCover from '@/components/ui/BookCover';
-import { Button } from '@/components/ui/button';
-import { useAuth } from '../context/AuthContext';
-import { Star, BookOpen, TrendingUp, Calendar, ChevronRight, Loader2, Book, Users } from 'lucide-react';
-import { toast } from 'react-toastify';
-import Chatbot from './Chatbot';
+import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import axios from "axios";
+import BackgroundWrapper from "@/components/ui/BackgroundWrapper";
+import BookCover from "@/components/ui/BookCover";
+import { Button } from "@/components/ui/button";
+import { useAuth } from "../context/AuthContext";
+import {
+  Star,
+  BookOpen,
+  TrendingUp,
+  Calendar,
+  ChevronRight,
+  Loader2,
+  Book,
+  Users,
+} from "lucide-react";
+import { toast } from "react-toastify";
+import Chatbot from "../components/chatbot/Chatbot";
 
 interface Book {
   id: number;
@@ -37,9 +46,9 @@ const Home = () => {
   const [isLoadingFeatured, setIsLoadingFeatured] = useState(true);
   const [isLoadingPopular, setIsLoadingPopular] = useState(true);
   const [isLoadingNewest, setIsLoadingNewest] = useState(true);
-  const [activeCategory, setActiveCategory] = useState<string>('All');
+  const [activeCategory, setActiveCategory] = useState<string>("All");
   const [filteredPopularBooks, setFilteredPopularBooks] = useState<Book[]>([]);
-  const [allCategories, setAllCategories] = useState<string[]>(['All']);
+  const [allCategories, setAllCategories] = useState<string[]>(["All"]);
   const { isAuthenticated, isLoading: isAuthLoading, user } = useAuth();
   const [borrowLoading, setBorrowLoading] = useState<number | null>(null);
   const [userRequests, setUserRequests] = useState<Record<number, string>>({});
@@ -51,24 +60,24 @@ const Home = () => {
   useEffect(() => {
     if (popularBooks.length > 0) {
       const categories = new Set<string>();
-      categories.add('All');
-      
-      popularBooks.forEach(book => {
-        book.categories.forEach(category => {
+      categories.add("All");
+
+      popularBooks.forEach((book) => {
+        book.categories.forEach((category) => {
           categories.add(category);
         });
       });
-      
+
       setAllCategories(Array.from(categories));
     }
   }, [popularBooks]);
 
   // Filter books by selected category
   useEffect(() => {
-    if (activeCategory === 'All') {
+    if (activeCategory === "All") {
       setFilteredPopularBooks(popularBooks);
     } else {
-      const filtered = popularBooks.filter(book => 
+      const filtered = popularBooks.filter((book) =>
         book.categories.includes(activeCategory)
       );
       setFilteredPopularBooks(filtered);
@@ -78,14 +87,17 @@ const Home = () => {
   // Check rental status for the featured book
   const checkRentalStatus = async (bookId: number) => {
     try {
-      const token = localStorage.getItem('token');
+      const token = localStorage.getItem("token");
       if (!token || !user) {
-        throw new Error('No token or user found');
+        throw new Error("No token or user found");
       }
 
-      const rentalResponse = await axios.get(`/api/rentals/specific_rental/${user.id}/${bookId}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const rentalResponse = await axios.get(
+        `/api/rentals/specific_rental/${user.id}/${bookId}`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
 
       // If the book is currently rented (returned_at is null), set activeRental
       if (rentalResponse.data && rentalResponse.data.returned_at === null) {
@@ -93,7 +105,7 @@ const Home = () => {
       } else {
         setActiveRental(null);
         // Clear the request from userRequests if it exists
-        setUserRequests(prev => {
+        setUserRequests((prev) => {
           const updated = { ...prev };
           delete updated[bookId];
           return updated;
@@ -101,11 +113,14 @@ const Home = () => {
       }
     } catch (error: any) {
       if (error.response?.status !== 404) {
-        console.error('Error checking rental status:', error.response?.data || error.message);
+        console.error(
+          "Error checking rental status:",
+          error.response?.data || error.message
+        );
       }
       setActiveRental(null);
       // Clear the request from userRequests if no active rental
-      setUserRequests(prev => {
+      setUserRequests((prev) => {
         const updated = { ...prev };
         delete updated[bookId];
         return updated;
@@ -117,23 +132,26 @@ const Home = () => {
     if (isAuthLoading) return;
 
     if (!isAuthenticated) {
-      navigate('/login');
+      navigate("/login");
       return;
     }
 
     const fetchPopularBooks = async () => {
       try {
         setIsLoadingPopular(true);
-        const token = localStorage.getItem('token');
-        if (!token) throw new Error('No token found');
-        
-        const response = await axios.get('/api/books/popular', {
+        const token = localStorage.getItem("token");
+        if (!token) throw new Error("No token found");
+
+        const response = await axios.get("/api/books/popular", {
           headers: { Authorization: `Bearer ${token}` },
         });
-        
+
         setPopularBooks(response.data || []);
       } catch (error: any) {
-        console.error('Error fetching popular books:', error.response?.data || error.message);
+        console.error(
+          "Error fetching popular books:",
+          error.response?.data || error.message
+        );
         setPopularBooks([]);
       } finally {
         setIsLoadingPopular(false);
@@ -143,16 +161,19 @@ const Home = () => {
     const fetchFeaturedBook = async () => {
       try {
         setIsLoadingFeatured(true);
-        const token = localStorage.getItem('token');
-        if (!token) throw new Error('No token found');
-        
-        const response = await axios.get('/api/books/featured', {
+        const token = localStorage.getItem("token");
+        if (!token) throw new Error("No token found");
+
+        const response = await axios.get("/api/books/featured", {
           headers: { Authorization: `Bearer ${token}` },
         });
-        
+
         setFeaturedBook(response.data || null);
       } catch (error: any) {
-        console.error('Error fetching featured book:', error.response?.data || error.message);
+        console.error(
+          "Error fetching featured book:",
+          error.response?.data || error.message
+        );
         setFeaturedBook(null);
       } finally {
         setIsLoadingFeatured(false);
@@ -162,17 +183,20 @@ const Home = () => {
     const fetchNewestBooks = async () => {
       try {
         setIsLoadingNewest(true);
-        const token = localStorage.getItem('token');
-        if (!token) throw new Error('No token found');
-        
-        const response = await axios.get('/api/books', {
+        const token = localStorage.getItem("token");
+        if (!token) throw new Error("No token found");
+
+        const response = await axios.get("/api/books", {
           headers: { Authorization: `Bearer ${token}` },
-          params: { sort: '-created_at', per_page: 5 }
+          params: { sort: "-created_at", per_page: 5 },
         });
-        
+
         setNewestBooks(response.data.books || []);
       } catch (error: any) {
-        console.error('Error fetching newest books:', error.response?.data || error.message);
+        console.error(
+          "Error fetching newest books:",
+          error.response?.data || error.message
+        );
         setNewestBooks([]);
       } finally {
         setIsLoadingNewest(false);
@@ -181,24 +205,30 @@ const Home = () => {
 
     const fetchUserRentalRequests = async () => {
       try {
-        const token = localStorage.getItem('token');
-        if (!token) throw new Error('No token found');
-        
-        const response = await axios.get('/api/rental_requests/my_requests?page=1&per_page=100', {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        
+        const token = localStorage.getItem("token");
+        if (!token) throw new Error("No token found");
+
+        const response = await axios.get(
+          "/api/rental_requests/my_requests?page=1&per_page=100",
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          }
+        );
+
         const requestMap: Record<number, string> = {};
         if (response.data.requests && Array.isArray(response.data.requests)) {
           response.data.requests.forEach((req: any) => {
-            if (req.status !== 'rejected') {
+            if (req.status !== "rejected") {
               requestMap[req.book_id] = req.status;
             }
           });
         }
         setUserRequests(requestMap);
       } catch (error: any) {
-        console.error('Error fetching user rental requests:', error.response?.data || error.message);
+        console.error(
+          "Error fetching user rental requests:",
+          error.response?.data || error.message
+        );
       }
     };
 
@@ -222,7 +252,9 @@ const Home = () => {
 
     for (let i = 1; i <= 5; i++) {
       if (i <= fullStars) {
-        stars.push(<Star key={i} className="h-4 w-4 fill-amber-400 text-amber-400" />);
+        stars.push(
+          <Star key={i} className="h-4 w-4 fill-amber-400 text-amber-400" />
+        );
       } else if (i === fullStars + 1 && hasHalfStar) {
         stars.push(
           <div key={i} className="relative">
@@ -246,48 +278,63 @@ const Home = () => {
   };
 
   const handleBorrowRequest = async (bookId: number) => {
-    if (borrowLoading === bookId || userRequests[bookId] || activeRental) return;
-    
+    if (borrowLoading === bookId || userRequests[bookId] || activeRental)
+      return;
+
     setBorrowLoading(bookId);
     try {
-      const token = localStorage.getItem('token');
-      if (!token) throw new Error('No token found');
-  
+      const token = localStorage.getItem("token");
+      if (!token) throw new Error("No token found");
+
       const response = await axios.post(
-        '/api/rental_requests',
+        "/api/rental_requests",
         { book_id: bookId },
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      
-      setUserRequests(prev => ({
+
+      setUserRequests((prev) => ({
         ...prev,
-        [bookId]: 'pending'
+        [bookId]: "pending",
       }));
-      
-      setPopularBooks(prev => 
-        prev.map(book => 
-          book.id === bookId 
-            ? { ...book, available_books: Math.max(0, book.available_books - 1) } 
+
+      setPopularBooks((prev) =>
+        prev.map((book) =>
+          book.id === bookId
+            ? {
+                ...book,
+                available_books: Math.max(0, book.available_books - 1),
+              }
             : book
         )
       );
-      
+
       if (featuredBook && featuredBook.id === bookId) {
-        setFeaturedBook(prev => 
-          prev ? { ...prev, available_books: Math.max(0, prev.available_books - 1) } : prev
+        setFeaturedBook((prev) =>
+          prev
+            ? {
+                ...prev,
+                available_books: Math.max(0, prev.available_books - 1),
+              }
+            : prev
         );
       }
-      
-      toast.success('Rental request created successfully! Awaiting admin approval.');
+
+      toast.success(
+        "Rental request created successfully! Awaiting admin approval."
+      );
 
       // Re-check rental status after making a request
       await checkRentalStatus(bookId);
     } catch (error: any) {
-      console.error('Error creating rental request:', error.response?.data || error.message);
-      const errorMsg = error.response?.data?.error || 'Failed to create rental request.';
+      console.error(
+        "Error creating rental request:",
+        error.response?.data || error.message
+      );
+      const errorMsg =
+        error.response?.data?.error || "Failed to create rental request.";
       toast.error(errorMsg);
       if (error.response?.status === 401) {
-        navigate('/login');
+        navigate("/login");
       }
     } finally {
       setBorrowLoading(null);
@@ -295,7 +342,7 @@ const Home = () => {
   };
 
   const handleViewAllBooks = () => {
-    navigate('/search');
+    navigate("/search");
   };
 
   const handleBookClick = (bookId: number) => {
@@ -308,7 +355,9 @@ const Home = () => {
         <div className="flex h-screen items-center justify-center">
           <div className="flex flex-col items-center gap-4">
             <Loader2 className="h-12 w-12 animate-spin text-amber-400" />
-            <p className="text-xl text-white">Loading your personal library...</p>
+            <p className="text-xl text-white">
+              Loading your personal library...
+            </p>
           </div>
         </div>
       </BackgroundWrapper>
@@ -346,36 +395,54 @@ const Home = () => {
                   <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold mb-3 text-white leading-tight">
                     {featuredBook.title}
                   </h1>
-                  
+
                   <div className="flex flex-wrap items-center gap-2 mb-4 text-sm">
                     <div className="flex items-center">
                       <Users className="h-4 w-4 mr-1 text-amber-400" />
-                      <span className="text-gray-300">By{" "}
-                        <span className="text-white">{featuredBook.authors.join(', ')}</span>
+                      <span className="text-gray-300">
+                        By{" "}
+                        <span className="text-white">
+                          {featuredBook.authors.join(", ")}
+                        </span>
                       </span>
                     </div>
-                    
+
                     <span className="text-gray-500">•</span>
-                    
+
                     <div className="flex items-center">
                       <BookOpen className="h-4 w-4 mr-1 text-amber-400" />
-                      <span className="text-gray-300">Categories:{" "}
-                        <span className="text-white">{featuredBook.categories.slice(0, 2).join(', ')}</span>
-                        {featuredBook.categories.length > 2 && <span> +{featuredBook.categories.length - 2}</span>}
+                      <span className="text-gray-300">
+                        Categories:{" "}
+                        <span className="text-white">
+                          {featuredBook.categories.slice(0, 2).join(", ")}
+                        </span>
+                        {featuredBook.categories.length > 2 && (
+                          <span> +{featuredBook.categories.length - 2}</span>
+                        )}
                       </span>
                     </div>
                   </div>
-                  
+
                   {renderRating(featuredBook.rating)}
-                  
+
                   <div className="flex gap-6 my-6">
                     <div className="flex flex-col">
-                      <span className="text-gray-400 text-sm">Total Copies</span>
-                      <span className="text-xl font-semibold">{featuredBook.total_books}</span>
+                      <span className="text-gray-400 text-sm">
+                        Total Copies
+                      </span>
+                      <span className="text-xl font-semibold">
+                        {featuredBook.total_books}
+                      </span>
                     </div>
                     <div className="flex flex-col">
                       <span className="text-gray-400 text-sm">Available</span>
-                      <span className={`text-xl font-semibold ${featuredBook.available_books > 0 ? 'text-green-400' : 'text-red-400'}`}>
+                      <span
+                        className={`text-xl font-semibold ${
+                          featuredBook.available_books > 0
+                            ? "text-green-400"
+                            : "text-red-400"
+                        }`}
+                      >
                         {featuredBook.available_books}
                       </span>
                     </div>
@@ -387,27 +454,34 @@ const Home = () => {
                       </span>
                     </div>
                   </div>
-                  
-                  <p className="text-gray-300 mb-8 line-clamp-3">{featuredBook.description}</p>
-                  
+
+                  <p className="text-gray-300 mb-8 line-clamp-3">
+                    {featuredBook.description}
+                  </p>
+
                   <div className="flex flex-wrap gap-3">
                     <Button
                       onClick={() => handleBorrowRequest(featuredBook.id)}
                       className="px-6 py-6 bg-amber-500 hover:bg-amber-600 text-gray-900 font-medium transition-colors shadow-lg"
-                      disabled={featuredBook.available_books <= 0 || activeRental || userRequests[featuredBook.id] === 'pending' || borrowLoading === featuredBook.id}
+                      disabled={
+                        featuredBook.available_books <= 0 ||
+                        activeRental ||
+                        userRequests[featuredBook.id] === "pending" ||
+                        borrowLoading === featuredBook.id
+                      }
                     >
                       <BookOpen className="mr-2 h-5 w-5" />
                       {borrowLoading === featuredBook.id
                         ? "Requesting..."
                         : activeRental
                         ? "Currently Borrowed"
-                        : userRequests[featuredBook.id] === 'pending'
+                        : userRequests[featuredBook.id] === "pending"
                         ? "Request Pending"
                         : featuredBook.available_books === 0
                         ? "Currently Unavailable"
                         : "Borrow This Book"}
                     </Button>
-                    
+
                     <Button
                       onClick={() => handleBookClick(featuredBook.id)}
                       className="px-6 py-6 bg-gray-800/70 hover:bg-gray-700 text-white transition-colors"
@@ -417,13 +491,15 @@ const Home = () => {
                     </Button>
                   </div>
                 </div>
-                
-                <div 
+
+                <div
                   className="relative flex-shrink-0 md:w-1/3 min-h-[384px] md:min-h-[450px] cursor-pointer"
                   onClick={() => handleBookClick(featuredBook.id)}
                 >
                   <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent rounded-xl opacity-0 hover:opacity-100 transition-opacity flex items-end justify-center p-4">
-                    <span className="text-white text-sm font-medium">Click to view details</span>
+                    <span className="text-white text-sm font-medium">
+                      Click to view details
+                    </span>
                   </div>
                   <BookCover
                     id={featuredBook.id}
@@ -443,9 +519,16 @@ const Home = () => {
                 <div className="inline-block p-4 rounded-full bg-amber-500/20 text-amber-300 mb-4">
                   <Book className="h-6 w-6" />
                 </div>
-                <h2 className="text-2xl font-bold mb-2">No Featured Book Available</h2>
-                <p className="text-gray-400 mb-6">Our librarians are currently selecting the next featured book.</p>
-                <Button onClick={handleViewAllBooks} className="bg-amber-500 hover:bg-amber-600 text-gray-900">
+                <h2 className="text-2xl font-bold mb-2">
+                  No Featured Book Available
+                </h2>
+                <p className="text-gray-400 mb-6">
+                  Our librarians are currently selecting the next featured book.
+                </p>
+                <Button
+                  onClick={handleViewAllBooks}
+                  className="bg-amber-500 hover:bg-amber-600 text-gray-900"
+                >
                   Browse All Books
                 </Button>
               </div>
@@ -457,12 +540,14 @@ const Home = () => {
         <section className="mb-12">
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6">
             <div>
-              <h2 className="text-3xl font-bold text-white mb-2">Popular Books</h2>
+              <h2 className="text-3xl font-bold text-white mb-2">
+                Popular Books
+              </h2>
               <p className="text-gray-400">Discover our most borrowed titles</p>
             </div>
-            <Button 
+            <Button
               onClick={handleViewAllBooks}
-              variant="link" 
+              variant="link"
               className="text-amber-400 hover:text-amber-300 px-0 py-0 h-auto flex items-center"
             >
               View all books
@@ -478,8 +563,8 @@ const Home = () => {
                 onClick={() => setActiveCategory(category)}
                 className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${
                   activeCategory === category
-                    ? 'bg-amber-600 text-white'
-                    : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+                    ? "bg-amber-600 text-white"
+                    : "bg-gray-800 text-gray-300 hover:bg-gray-700"
                 }`}
               >
                 {category}
@@ -517,10 +602,10 @@ const Home = () => {
                   onClick={() => handleBookClick(book.id)}
                 >
                   <div className="relative h-56">
-                    <BookCover 
-                      id={book.id} 
-                      cover_url={book.cover_url} 
-                      title={book.title} 
+                    <BookCover
+                      id={book.id}
+                      cover_url={book.cover_url}
+                      title={book.title}
                       size="sm"
                       className="h-full w-full object-cover"
                     />
@@ -537,18 +622,20 @@ const Home = () => {
                     </div>
                   </div>
                   <div className="p-4 flex-grow flex flex-col">
-                    <h3 className="font-medium text-white mb-1 line-clamp-2">{book.title}</h3>
+                    <h3 className="font-medium text-white mb-1 line-clamp-2">
+                      {book.title}
+                    </h3>
                     <p className="text-xs text-gray-400 mb-2 line-clamp-1">
-                      By {book.authors.join(', ')}
+                      By {book.authors.join(", ")}
                     </p>
                     {renderRating(book.rating)}
-                    
+
                     <div className="mt-auto pt-3 flex justify-between items-center">
                       <span className="text-xs text-gray-400">
                         {book.available_books}/{book.total_books}
                       </span>
                       {book.available_books > 0 && !userRequests[book.id] ? (
-                        <button 
+                        <button
                           onClick={(e) => {
                             e.stopPropagation();
                             handleBorrowRequest(book.id);
@@ -563,16 +650,22 @@ const Home = () => {
                           {borrowLoading === book.id ? "..." : "Borrow"}
                         </button>
                       ) : (
-                        <span className={`text-xs px-2 py-0.5 rounded-full ${
-                          userRequests[book.id]
-                            ? 'bg-blue-900/30 text-blue-300'
-                            : book.available_books > 0 
-                              ? 'bg-green-900/30 text-green-300' 
-                              : 'bg-red-900/30 text-red-300'
-                        }`}>
+                        <span
+                          className={`text-xs px-2 py-0.5 rounded-full ${
+                            userRequests[book.id]
+                              ? "bg-blue-900/30 text-blue-300"
+                              : book.available_books > 0
+                              ? "bg-green-900/30 text-green-300"
+                              : "bg-red-900/30 text-red-300"
+                          }`}
+                        >
                           {userRequests[book.id]
-                            ? userRequests[book.id] === "pending" ? "Pending" : "Borrowed"
-                            : book.available_books > 0 ? 'Available' : 'Unavailable'}
+                            ? userRequests[book.id] === "pending"
+                              ? "Pending"
+                              : "Borrowed"
+                            : book.available_books > 0
+                            ? "Available"
+                            : "Unavailable"}
                         </span>
                       )}
                     </div>
@@ -581,15 +674,23 @@ const Home = () => {
               ))
             ) : (
               <div className="col-span-full flex flex-col items-center justify-center p-8 text-center bg-gray-800/30 rounded-lg border border-gray-700/50">
-                <Book className="h-12 w-12 text-gray-600 mb-3" strokeWidth={1} />
-                <h3 className="text-xl font-medium text-white mb-2">No books found</h3>
+                <Book
+                  className="h-12 w-12 text-gray-600 mb-3"
+                  strokeWidth={1}
+                />
+                <h3 className="text-xl font-medium text-white mb-2">
+                  No books found
+                </h3>
                 <p className="text-gray-400 mb-4">
-                  {activeCategory !== 'All' 
-                    ? `No books found in the "${activeCategory}" category.` 
-                    : 'No popular books available at the moment.'}
+                  {activeCategory !== "All"
+                    ? `No books found in the "${activeCategory}" category.`
+                    : "No popular books available at the moment."}
                 </p>
-                {activeCategory !== 'All' && (
-                  <Button onClick={() => setActiveCategory('All')} variant="secondary">
+                {activeCategory !== "All" && (
+                  <Button
+                    onClick={() => setActiveCategory("All")}
+                    variant="secondary"
+                  >
                     View All Categories
                   </Button>
                 )}
@@ -602,12 +703,16 @@ const Home = () => {
         <section className="mb-16">
           <div className="flex justify-between items-center mb-6">
             <div>
-              <h2 className="text-3xl font-bold text-white mb-2">New Arrivals</h2>
-              <p className="text-gray-400">The latest additions to our library</p>
+              <h2 className="text-3xl font-bold text-white mb-2">
+                New Arrivals
+              </h2>
+              <p className="text-gray-400">
+                The latest additions to our library
+              </p>
             </div>
-            <Button 
+            <Button
               onClick={handleViewAllBooks}
-              variant="link" 
+              variant="link"
               className="text-amber-400 hover:text-amber-300 px-0 py-0 h-auto flex items-center"
             >
               View all
@@ -619,7 +724,10 @@ const Home = () => {
             {isLoadingNewest ? (
               <div className="animate-pulse p-6 divide-y divide-gray-700/50">
                 {Array.from({ length: 5 }).map((_, index) => (
-                  <div key={index} className="flex gap-4 py-4 first:pt-0 last:pb-0">
+                  <div
+                    key={index}
+                    className="flex gap-4 py-4 first:pt-0 last:pb-0"
+                  >
                     <div className="h-24 w-16 bg-gray-700/50 rounded"></div>
                     <div className="flex-1">
                       <div className="h-4 bg-gray-700/50 rounded w-3/4 mb-2"></div>
@@ -636,8 +744,8 @@ const Home = () => {
             ) : newestBooks.length > 0 ? (
               <div className="divide-y divide-gray-700/50">
                 {newestBooks.map((book) => (
-                  <div 
-                    key={book.id} 
+                  <div
+                    key={book.id}
                     className="flex p-6 gap-4 hover:bg-gray-700/20 transition-colors cursor-pointer"
                     onClick={() => handleBookClick(book.id)}
                   >
@@ -651,21 +759,26 @@ const Home = () => {
                       />
                     </div>
                     <div className="flex-1">
-                      <h3 className="font-medium text-white mb-1">{book.title}</h3>
+                      <h3 className="font-medium text-white mb-1">
+                        {book.title}
+                      </h3>
                       <p className="text-sm text-gray-400 mb-2">
-                        By {book.authors.join(', ')}
+                        By {book.authors.join(", ")}
                       </p>
                       <div className="flex items-center gap-2 flex-wrap">
                         {renderRating(book.rating)}
                         <span className="text-gray-500">•</span>
                         <div className="flex items-center text-xs text-gray-400">
                           <Calendar className="h-3 w-3 mr-1" />
-                          {book.created_at 
-                            ? new Date(book.created_at).toLocaleDateString('en-US', { 
-                                month: 'short', 
-                                day: 'numeric' 
-                              }) 
-                            : 'New'}
+                          {book.created_at
+                            ? new Date(book.created_at).toLocaleDateString(
+                                "en-US",
+                                {
+                                  month: "short",
+                                  day: "numeric",
+                                }
+                              )
+                            : "New"}
                         </div>
                         <span className="text-gray-500">•</span>
                         <div className="flex flex-wrap gap-1">
@@ -687,14 +800,18 @@ const Home = () => {
                     </div>
                     <div className="flex-shrink-0 self-center">
                       {book.available_books > 0 ? (
-                        <Button 
+                        <Button
                           onClick={(e) => {
                             e.stopPropagation();
                             handleBorrowRequest(book.id);
                           }}
                           size="sm"
                           className="bg-amber-500 hover:bg-amber-600 text-gray-900"
-                          disabled={book.available_books <= 0 || !!userRequests[book.id] || borrowLoading === book.id}
+                          disabled={
+                            book.available_books <= 0 ||
+                            !!userRequests[book.id] ||
+                            borrowLoading === book.id
+                          }
                         >
                           {borrowLoading === book.id
                             ? "..."
@@ -713,8 +830,13 @@ const Home = () => {
               </div>
             ) : (
               <div className="p-8 text-center">
-                <Calendar className="h-12 w-12 text-gray-600 mx-auto mb-3" strokeWidth={1} />
-                <h3 className="text-xl font-medium text-white mb-2">No New Arrivals</h3>
+                <Calendar
+                  className="h-12 w-12 text-gray-600 mx-auto mb-3"
+                  strokeWidth={1}
+                />
+                <h3 className="text-xl font-medium text-white mb-2">
+                  No New Arrivals
+                </h3>
                 <p className="text-gray-400">
                   Check back soon for new additions to our library
                 </p>

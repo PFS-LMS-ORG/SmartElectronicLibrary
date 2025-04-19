@@ -1,5 +1,5 @@
 from flask import Blueprint, request, jsonify
-from app.services.ChatBotService import ChatbotService
+from app.services.ChatBotService import ChatBotService
 from flask_jwt_extended import jwt_required, get_jwt_identity
 import logging
 
@@ -22,26 +22,23 @@ def process_message():
     }
     """
     try:
-        # Get user ID from JWT token
         user_id = get_jwt_identity()
-        
-        # Get request data
         data = request.get_json()
         
         if not data or 'message' not in data:
             return jsonify({'error': 'Message is required'}), 400
         
         message = data.get('message')
-        language = data.get('language', 'en')  # Default to English
+        language = data.get('language', 'en')
         
         logger.debug(f"Processing chatbot message: {message[:50]}... in {language}")
         
-        # Call the service to get a response
-        response = ChatbotService.get_chatbot_response(user_id, message, language)
+        response = ChatBotService().get_chatbot_response(user_id, message, language)
         
         return jsonify({
-            'response': response,
-            'language': language
+            'response': response['response'],
+            'language': language,
+            'book_recommendations': response['book_recommendations']
         }), 200
         
     except Exception as e:
@@ -56,14 +53,8 @@ def get_chat_history():
     """
     try:
         user_id = get_jwt_identity()
-        
-        # Get chat history from service
-        history = ChatbotService.get_user_chat_history(user_id)
-        
-        return jsonify({
-            'chat_history': history
-        }), 200
-        
+        history = ChatBotService.get_user_chat_history(user_id)
+        return jsonify({'chat_history': history}), 200
     except Exception as e:
         logger.error(f"Error fetching chat history: {str(e)}")
         return jsonify({'error': 'Server error fetching chat history'}), 500
@@ -72,18 +63,25 @@ def get_chat_history():
 @jwt_required()
 def clear_chat_history():
     """
-    Clear chat history for the current user.
+    Clear chat history and conversation memory for the current user.
     """
     try:
         user_id = get_jwt_identity()
-        
-        # Clear chat history
-        ChatbotService.clear_user_chat_history(user_id)
-        
-        return jsonify({
-            'message': 'Chat history cleared successfully'
-        }), 200
-        
+        # Clear chat history from database
+        ChatBotService.clear_user_chat_history(user_id)
+        # Clear conversation memory
+        ChatBotService().clear_conversation_memory(user_id)
+        return jsonify({'message': 'Chat history cleared successfully'}), 200
     except Exception as e:
         logger.error(f"Error clearing chat history: {str(e)}")
         return jsonify({'error': 'Server error clearing chat history'}), 500
+    
+
+@chatbot_controller.route('/refresh-vector-store', methods=['POST'])
+@jwt_required()
+def refresh_vector_store():
+    try:
+        ChatBotService().refresh_vector_store()
+        return jsonify({"message": "Vector store refreshed successfully."}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
