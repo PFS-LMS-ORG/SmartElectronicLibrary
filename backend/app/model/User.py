@@ -14,6 +14,7 @@ class User(db.Model):
 
     rentals = db.relationship('Rental', back_populates='user')
     rental_requests = db.relationship('RentalRequest', back_populates='user')
+    chat_messages = db.relationship("ChatMessage", back_populates="user")
 
     def set_password(self, password):
         """Hash and set the user's password."""
