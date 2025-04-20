@@ -1,35 +1,33 @@
 // components/ui/BookCover.tsx
 import React from 'react';
+import { Link } from 'react-router-dom';
 
 interface BookCoverProps {
-  coverImage: string;
+  id: number;
   title: string;
-  size?: 'sm' | 'md' | 'lg';
+  cover_url: string;
+  size?: 'xs' | 'sm' | 'md' | 'lg';
   className?: string;
 }
 
-const BookCover: React.FC<BookCoverProps> = ({ coverImage, title, size = 'md', className = '' }) => {
+const BookCover: React.FC<BookCoverProps> = ({id, cover_url, title, size = 'md', className = '' }) => {
   // Size classes
   const sizeClasses = {
+    xs: "h-32", // Extra small for grid view
     sm: "h-64", // Small for grid view
     md: "h-80", // Medium for list view
     lg: "h-96", // Large for detail view
   };
 
-  // Shadow styles
-  const shadowStyle = {
-    boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.8), 0 10px 10px -5px rgba(0, 0, 0, 0.5)"
-  };
 
   return (
-    <div className={`relative ${className}`}>
+    <Link to={`/book/${id}`} className={`relative ${className}`}>
       <img 
-        src={coverImage} 
+        src={cover_url} 
         alt={title} 
-        className={`rounded-lg object-cover w-full ${sizeClasses[size]} transition-transform duration-300 hover:scale-105`}
-        style={shadowStyle}
+        className={`rounded-lg object-cover w-full h-full ${sizeClasses[size]} transition-transform duration-300 hover:scale-105`}
       />
-    </div>
+    </Link>
   );
 };
 
