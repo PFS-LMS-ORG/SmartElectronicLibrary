@@ -4,3 +4,8 @@ from .Category import Category
 from .Rental import Rental
 from .User import User
 from .RentalRequest import RentalRequest
+from .ArticleAuthor import ArticleAuthor
+from .Article import Article
+from .ArticleMeta import ArticleMeta
+from .ArticleLike import ArticleLike
+from .ArticleBookmark import ArticleBookmark
