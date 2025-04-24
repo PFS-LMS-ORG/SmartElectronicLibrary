@@ -20,17 +20,21 @@ import AdminRentalsPage from "./pages/admin/AdminRentalsPage";
 import CreateBookPage from "./pages/admin/CreateBookPage";
 import AccountRequestsPage from "./pages/admin/AccountRequestsPage";
 import UserProfilePage from "./pages/UserProfilePage";
+import ArticlesPage from "./pages/ArticlesPage";
+import ArticleDetailsPage from "./pages/ArticleDetailsPage";
 
 import { AnimatePresence } from 'framer-motion';
 import { useLocation } from 'react-router-dom';
 
 function App() {
+  const location = useLocation();
+  
   return (
     <AuthProvider>
       <BackgroundWrapper>
         <Navbar />
           <AnimatePresence mode="wait">
-            <Routes location={useLocation()} key={useLocation().pathname}>
+            <Routes location={location} key={location.pathname}>
               <Route path="/login" element={<LibraryLoginPage />} />
               <Route path="/register" element={<LibraryRegistrationPage />} />
               <Route
@@ -73,6 +77,24 @@ function App() {
                   </ProtectedRoute>
                 }
               />
+              {/* New Article Routes */}
+              <Route
+                path="/articles"
+                element={
+                  <ProtectedRoute>
+                    <ArticlesPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/articles/:slug"
+                element={
+                  <ProtectedRoute>
+                    <ArticleDetailsPage />
+                  </ProtectedRoute>
+                }
+              />
+              {/* Admin Routes */}
               <Route
                 path="/admin"
                 element={
