@@ -6,7 +6,7 @@ import os
 import re
 from typing import List, Dict, Any
 from langchain.schema import Document
-from langchain_community.vectorstores import FAISS
+from langchain.vectorstores import FAISS
 from langchain_huggingface import HuggingFaceEmbeddings  # Updated to use langchain_huggingface
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.tools import tool
