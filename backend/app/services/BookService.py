@@ -1,3 +1,4 @@
+from sqlalchemy import or_
 from app.db import db
 from app.model.Book import Book
 from app.model.Author import Author
