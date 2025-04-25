@@ -11,8 +11,8 @@ class Article(db.Model):
     category = db.Column(db.String(50), nullable=False)
     author_id = db.Column(db.Integer, db.ForeignKey('article_authors.id'), nullable=False)
     summary = db.Column(db.Text, nullable=False)
-    content = db.Column(db.Text, nullable=False)
-    tags = db.Column(db.JSON, nullable=False, default=[])  # SQLite-compatible JSON
+    pdf_url = db.Column(db.String(255), nullable=False)  # Replaced content with pdf_url
+    tags = db.Column(db.JSON, nullable=False, default=[])
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, nullable=True)
 
@@ -26,14 +26,14 @@ class Article(db.Model):
 
     def to_dict(self):
         return {
-            'id': str(self.id),  # Match string ID format from article format
+            'id': str(self.id),
             'title': self.title,
             'slug': self.slug,
             'coverImageUrl': self.cover_image_url,
             'category': self.category,
             'author': self.author.to_dict(),
             'summary': self.summary,
-            'content': self.content,
+            'pdfUrl': self.pdf_url,  # Replaced content with pdfUrl
             'tags': self.tags,
             'createdAt': self.created_at.isoformat() + 'Z',
             'updatedAt': self.updated_at.isoformat() + 'Z' if self.updated_at else None,

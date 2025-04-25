@@ -8,7 +8,7 @@ import { useAuth } from '../context/AuthContext';
 import { toast } from 'react-toastify';
 import { useLocation } from 'react-router-dom';
 
-// Define interfaces based on the requirements
+// Define interfaces based on the updated Article model
 interface Article {
   id: string;
   title: string;
@@ -20,7 +20,7 @@ interface Article {
     avatarUrl?: string;
   };
   summary: string;
-  content: string;
+  pdfUrl: string; // Replaced content with pdfUrl
   tags: string[];
   createdAt: string;
   updatedAt?: string;
@@ -45,8 +45,6 @@ interface ArticlesResponse {
 }
 
 const ArticlesPage: React.FC = () => {
-
-
   const location = useLocation();
   const queryParams = new URLSearchParams(location.search);
   const initialTag = queryParams.get('tag') || '';
@@ -107,7 +105,6 @@ const ArticlesPage: React.FC = () => {
         setTotalCount(total_count);
         setTotalPages(total_pages);
 
-
         // Fetch user's liked and bookmarked articles
         try {
           const [likesResponse, bookmarksResponse] = await Promise.all([
@@ -140,8 +137,6 @@ const ArticlesPage: React.FC = () => {
 
     fetchArticles();
   }, [isAuthenticated, isAuthLoading, navigate, currentPage, searchQuery, selectedCategory, selectedTag, initialTag]);
-
-
 
   useEffect(() => {
     setSelectedTag(initialTag);
@@ -188,7 +183,6 @@ const ArticlesPage: React.FC = () => {
         { headers: { Authorization: `Bearer ${token}` } }
       );
 
-
       // Show toast notification
       toast.success(isLiked ? 'Article unliked' : 'Article liked', {
         position: 'bottom-center',
@@ -217,7 +211,7 @@ const ArticlesPage: React.FC = () => {
       console.error('Error toggling like:', error);
     }
   };
-  
+
   const handleBookmarkToggle = async (articleId: string, e: React.MouseEvent) => {
     e.stopPropagation(); // Prevent navigating to article
     try {
@@ -354,7 +348,7 @@ const ArticlesPage: React.FC = () => {
                 value={searchQuery}
                 onChange={handleSearchChange}
                 className="w-full bg-gray-800/70 backdrop-blur-md rounded-xl border border-gray-700 py-4 pl-12 pr-4 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent shadow-lg"
-                placeholder="Search articles by title, content, or author..."
+                placeholder="Search articles by title, summary, or author..."
               />
             </div>
             <button 

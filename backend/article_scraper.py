@@ -2,51 +2,79 @@ import requests
 import time
 import json
 from bs4 import BeautifulSoup
+from datetime import datetime
+import hashlib
 
-URL1 = "https://arxiv.org/archive/cs"
+def slugify(text):
+    return text.lower().replace(" ", "-").replace("\n", "").strip()
 
-URLS = [URL1]
+def generate_id(title):
+    return hashlib.md5(title.encode()).hexdigest()
+
+URLS = [
+    "https://arxiv.org/archive/cs",
+    "https://arxiv.org/archive/math"
+]
 
 all_data = []
 
 for URL in URLS:
     page = requests.get(URL)
-    soup = BeautifulSoup(page.content , "html.parser")
+    soup = BeautifulSoup(page.content, "html.parser")
     links = soup.find_all('a')
-    links = list(filter(lambda link: link["href"].startswith('/list/') and link["href"].endswith("new"), links ))
+    links = list(filter(lambda link: link["href"].startswith('/list/') and link["href"].endswith("new"), links))
 
-    links.pop(0) #the only link that should be removed
+    links.pop(0)  # remove unwanted first link
 
     for link in links:
-        print(" going into : ==> https://arxiv.org" + link["href"])
         page = requests.get("https://arxiv.org" + link["href"])
-        soup = BeautifulSoup(page.content , "html.parser")
-
+        soup = BeautifulSoup(page.content, "html.parser")
 
         dts = soup.find_all('dt')
         for dt in dts:
-            article_link = dt.find('a',string="html")
+            article_link = dt.find('a', string="pdf")
             if not article_link:
                 continue
-
-            article_link = article_link["href"]
-
+            article_link = "https://arxiv.org" + article_link["href"]
             dd = dt.find_next_sibling('dd')
-            authors = dd.find('div' , class_ = "list-authors").find_all('a')
-            authors = [author.text for author in authors]
 
-            category = dd.find('div',class_="list-subjects").find('span',class_="primary-subject").text
+            # Authors
+            authors_tags = dd.find('div', class_="list-authors").find_all('a')
+            authors_list = [a.text.strip() for a in authors_tags]
+            first_author = authors_list[0] if authors_list else "Unknown"
 
-            page = requests.get(article_link)
-            soup = BeautifulSoup(page.content , "html.parser")
+            # Title
+            title_tag = dd.find('div', class_="list-title mathjax")
+            for span in title_tag.find_all('span'):
+                span.decompose()
+            title = title_tag.text.strip().replace("Title:", "").strip()
 
+            #summary
+            summary = dd.find('p',class_="mathjax").text.strip()
+
+            # Category
+            category = dd.find('div', class_="list-subjects").find('span', class_="primary-subject").text.strip()
+
+            # Build article structure
             data = {
-                "authors" : authors,
-                "category" : category
+                "id": generate_id(title),
+                "title": title,
+                "slug": slugify(title),
+                "coverImageUrl": "https://placehold.co/600x300",  # placeholder
+                "category": category,
+                "author": {
+                    "name": first_author,
+                    "avatarUrl": "https://placehold.co/64"  # placeholder
+                },
+                "summary": summary,
+                "pdfUrl": article_link,
+                "tags": [category],
+                "createdAt": datetime.utcnow().isoformat() + "Z"
             }
 
             all_data.append(data)
 
-
-with open("output.json", "w", encoding="utf-8") as f:
+with open("formatted_articles.json", "w", encoding="utf-8") as f:
     json.dump(all_data, f, indent=2, ensure_ascii=False)
+
+print(f"Successfully scraped and saved {len(all_data)} articles.")

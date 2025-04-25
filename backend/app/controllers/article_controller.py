@@ -1,3 +1,4 @@
+
 from flask import Blueprint, jsonify, request
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from app.db import db
@@ -18,7 +19,6 @@ def get_articles():
 
     query = Article.query.join(ArticleAuthor)
 
-    # Search filter (by title or author name)
     if search:
         query = query.filter(
             db.or_(
@@ -27,16 +27,12 @@ def get_articles():
             )
         )
 
-    # Category filter
     if category:
         query = query.filter(Article.category.ilike(f'%{category}%'))
 
-    # Tag filter
     if tag:
         query = query.filter(Article.tags.like(f'%"{tag}"%'))
 
-
-    # Pagination
     total_count = query.count()
     articles = query.offset((page - 1) * per_page).limit(per_page).all()
 
@@ -58,10 +54,9 @@ def get_article_by_slug(slug):
 @jwt_required()
 def create_article():
     data = request.get_json()
-    if not data or not all(key in data for key in ["title", "content", "category", "author", "summary"]):
+    if not data or not all(key in data for key in ["title", "pdfUrl", "category", "author", "summary"]):
         return jsonify({"error": "Missing required fields"}), 400
 
-    # Handle author
     author_data = data["author"]
     author = ArticleAuthor.query.filter_by(name=author_data["name"]).first()
     if not author:
@@ -69,7 +64,6 @@ def create_article():
         db.session.add(author)
         db.session.flush()
 
-    # Create article
     article = Article(
         title=data["title"],
         slug=data["title"].lower().replace(" ", "-").replace("'", "").replace(",", ""),
@@ -77,14 +71,13 @@ def create_article():
         category=data["category"],
         author_id=author.id,
         summary=data["summary"],
-        content=data["content"],
+        pdf_url=data["pdfUrl"],  # Replaced content with pdfUrl
         tags=data.get("tags", []),
         created_at=datetime.utcnow()
     )
     db.session.add(article)
     db.session.flush()
 
-    # Create meta
     meta = ArticleMeta(
         article_id=article.id,
         read_time=data.get("meta", {}).get("readTime", 5),
@@ -108,8 +101,7 @@ def update_article(slug):
     if not data:
         return jsonify({"error": "No data provided"}), 400
 
-    # Update fields
-    for key in ["title", "content", "category", "summary", "tags", "cover_image_url"]:
+    for key in ["title", "pdfUrl", "category", "summary", "tags", "cover_image_url"]:
         if key in data:
             setattr(article, key, data[key])
 
@@ -160,21 +152,17 @@ def get_related_articles(id):
     tags = [tag.strip() for tag in tags if tag.strip()]
     category = request.args.get('category', '')
 
-    # Find related articles
     related_articles = []
     scored_articles = []
 
     for other_article in Article.query.filter(Article.id != id).all():
-        # Calculate relevance score based on tag matches
         common_tags = set(tags) & set(other_article.tags)
         score = len(common_tags)
-        # Boost score if category matches
         if category and other_article.category.lower() == category.lower():
             score += 1
         if score > 0 or (category and other_article.category.lower() == category.lower()) or common_tags:
             scored_articles.append((score, other_article))
 
-    # Sort by score (descending) and limit results
     scored_articles.sort(key=lambda x: x[0], reverse=True)
     for _, other_article in scored_articles[:limit]:
         related_articles.append({
@@ -184,6 +172,7 @@ def get_related_articles(id):
             "coverImageUrl": other_article.cover_image_url,
             "category": other_article.category,
             "summary": other_article.summary,
+            "pdfUrl": other_article.pdf_url,  # Added pdfUrl
             "createdAt": other_article.created_at.isoformat() + 'Z'
         })
 
@@ -195,7 +184,6 @@ def like_article(id):
     user_id = get_jwt_identity()
     article = Article.query.get_or_404(id)
 
-    # Check if already liked
     existing_like = ArticleLike.query.filter_by(user_id=user_id, article_id=id).first()
     if existing_like:
         db.session.delete(existing_like)
@@ -203,7 +191,6 @@ def like_article(id):
         db.session.commit()
         return jsonify({'message': 'Article unliked', 'likes': article.meta.likes_count}), 200
 
-    # Add like
     like = ArticleLike(user_id=user_id, article_id=id)
     article.meta.likes_count += 1
     db.session.add(like)
@@ -216,7 +203,6 @@ def bookmark_article(id):
     user_id = get_jwt_identity()
     article = Article.query.get_or_404(id)
 
-    # Check if already bookmarked
     existing_bookmark = ArticleBookmark.query.filter_by(user_id=user_id, article_id=id).first()
     if existing_bookmark:
         db.session.delete(existing_bookmark)
@@ -224,14 +210,11 @@ def bookmark_article(id):
         db.session.commit()
         return jsonify({'message': 'Article unbookmarked', 'bookmarks': article.meta.bookmarks_count}), 200
 
-    # Add bookmark
     bookmark = ArticleBookmark(user_id=user_id, article_id=id)
     article.meta.bookmarks_count += 1
     db.session.add(bookmark)
     db.session.commit()
     return jsonify({'message': 'Article bookmarked', 'bookmarks': article.meta.bookmarks_count}), 200
-
-
 
 @article_controller.route('/user/likes', methods=['GET'])
 @jwt_required()
