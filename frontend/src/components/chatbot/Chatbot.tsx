@@ -114,14 +114,30 @@ const Chatbot: React.FC = () => {
               timestamp: new Date(msg.created_at),
             });
             
-            // Then add the assistant response
+            // Check if there's a follow-up question in the response
+            const hasFollowUp = msg.follow_up_question && msg.follow_up_question.length > 0;
+            const mainResponse = hasFollowUp 
+              ? msg.response.replace(msg.follow_up_question, '').trim() 
+              : msg.response;
+            
+            // Add main response
             processedHistory.push({
               id: msg.id.toString(),
-              content: msg.response,
+              content: mainResponse,
               role: 'assistant' as MessageRole,
               timestamp: new Date(msg.created_at),
               book_recommendations: msg.book_recommendations,
             });
+            
+            // Add follow-up as separate message if it exists
+            if (hasFollowUp) {
+              processedHistory.push({
+                id: `follow-up-${msg.id}`,
+                content: msg.follow_up_question,
+                role: 'assistant' as MessageRole,
+                timestamp: new Date(new Date(msg.created_at).getTime() + 100),
+              });
+            }
           });
           
           // Sort by timestamp in ascending order
@@ -196,6 +212,7 @@ const Chatbot: React.FC = () => {
     setInputValue('');
     setIsLoading(true);
     
+    
     try {
       const token = localStorage.getItem('token');
       const response = await axios.post(
@@ -204,27 +221,66 @@ const Chatbot: React.FC = () => {
         { headers: { Authorization: `Bearer ${token}` } }
       );
       
+      // Map the recommendations to the expected format
+      const mappedRecommendations = response.data.recommended_books ? 
+      response.data.recommended_books.map((book: {
+        id?: string;
+        title?: string;
+        author?: string;
+        category?: string;
+        rating?: number;
+        cover_url?: string;
+        reason?: string;
+      }) => ({
+        id: parseInt(book.id || '0') || 0,
+        title: book.title || '',
+        author: book.author || '',
+        category: book.category || '',
+        rating: book.rating || 0,
+        cover_url: book.cover_url || '',
+        reason: book.reason || ''
+      })) : [];
+      
+      // First add the main response with book recommendations
       setMessages(prevMessages => [
         ...prevMessages,
         {
           id: Date.now().toString(),
-          content: response.data.response,
+          content: response.data.response.replace(response.data.follow_up_question, '').trim(),
           role: 'assistant',
           timestamp: new Date(),
-          book_recommendations: response.data.book_recommendations,
+          book_recommendations: mappedRecommendations,
         },
       ]);
-    } catch (error) {
-      console.error('Error sending message to chatbot:', error);
-      if (axios.isAxiosError(error) && error.response?.status === 401) {
-        toast.error(translations[language].authError);
-        setIsOpen(false);
-      } else {
-        toast.error('Failed to get a response. Please try again.');
+      
+      // show the follow-up question with delay
+      if (response.data.follow_up_question) {
+        setTimeout(() => {
+          setMessages(prevMessages => [
+            ...prevMessages,
+            {
+              id: `follow-up-${Date.now().toString()}`,
+              content: response.data.follow_up_question,
+              role: 'assistant',
+              timestamp: new Date(Date.now() + 500),
+            },
+          ]);
+        }, 1000);
       }
-    } finally {
-      setIsLoading(false);
-    }
+    } catch (error) {
+        console.error('Error sending message to chatbot:', error);
+          if (axios.isAxiosError(error) && error.response?.status === 401) {
+            toast.error(translations[language].authError);
+            setIsOpen(false);
+          } else {
+            toast.error('Failed to get a response. Please try again.');
+          }
+        } finally {
+          setIsLoading(false);
+        }
+
+
+    
   };
 
   const handleLanguageChange = (lang: LanguageOption) => {

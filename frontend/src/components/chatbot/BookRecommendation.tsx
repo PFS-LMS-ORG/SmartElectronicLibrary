@@ -3,11 +3,11 @@ import { motion } from 'framer-motion';
 import { Star } from 'lucide-react';
 
 export interface BookRecommendation {
+  id: number;
   title: string;
   author: string;
   category: string;
   rating: number;
-  book_id: number;
   cover_url: string;
   reason: string;
 }
@@ -32,7 +32,7 @@ export const BookRecommendationItem: React.FC<BookRecommendationItemProps> = ({
       transition={{ duration: 0.3 }}
       whileHover={{ scale: 1.02, boxShadow: "0 10px 15px -3px rgba(0, 0, 0, 0.1)" }}
       whileTap={{ scale: 0.98 }}
-      onClick={() => onClick(book.book_id)}
+      onClick={() => onClick(book.id)}
     >
       {/* Book Cover Image */}
       <div className="h-full w-16 bg-gray-700 overflow-hidden flex-shrink-0">
@@ -93,7 +93,7 @@ const BookRecommendations: React.FC<BookRecommendationsProps> = ({
       <div className="grid grid-cols-2 gap-2">
         {recommendations.map((book) => (
           <BookRecommendationItem 
-            key={book.book_id} 
+            key={book.id} 
             book={book} 
             language={language}
             onClick={onBookClick}
