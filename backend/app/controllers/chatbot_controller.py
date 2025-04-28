@@ -1,7 +1,10 @@
+import os
 from flask import Blueprint, request, jsonify
 from app.services.ChatBotService import ChatBotService
 from flask_jwt_extended import jwt_required, get_jwt_identity
 import logging
+import traceback
+import json
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
@@ -20,6 +23,29 @@ def process_message():
         "message": "User's message text",
         "language": "en" | "fr" | "ar"
     }
+    
+    Returns:
+    {
+        "response": "Chatbot's text response",
+        "language": "Language code",
+        "follow_up_question": "A follow-up question",
+        "recommended_books": [
+            {
+                "id": 1,
+                "title": "Book title",
+                "author": "Book author",
+                "category": "Book category",
+                "description": "Book description",
+                "summary": "Book summary",
+                "rating": 4.5,
+                "borrow_count": 10,
+                "total_books": 5,
+                "available_books": 3,
+                "featured_book": false,
+                "cover_url": "URL to book cover"
+            }
+        ]
+    }
     """
     try:
         user_id = get_jwt_identity()
@@ -33,16 +59,86 @@ def process_message():
         
         logger.debug(f"Processing chatbot message: {message[:50]}... in {language}")
         
-        response = ChatBotService().get_chatbot_response(user_id, message, language)
-        
-        return jsonify({
-            'response': response['response'],
-            'language': language,
-            'book_recommendations': response['book_recommendations']
-        }), 200
-        
+        try:
+            # Get thread ID based on user ID
+            thread_id = f"user_{user_id}"
+            
+            # Call the ChatBot service
+            chatbot_service = ChatBotService()
+            response_json = chatbot_service.chat_with_user(message, thread_id)
+            
+            # Try to parse the JSON response
+            try:
+                response_data = json.loads(response_json)
+            except Exception as e:
+                logger.error(f"Error parsing ChatBot response: {str(e)}")
+                response_data = {
+                    "answer": "Sorry, I couldn't process your request properly.",
+                    "follow_up_question": "Can I help you with something else?",
+                    "recommended_books": None
+                }
+            
+            # Extract data from the response
+            answer = response_data.get("answer", "")
+            follow_up_question = response_data.get("follow_up_question", "")
+            recommended_books = response_data.get("recommended_books", [])
+            
+            # Combine answer and follow-up question for the main response
+            combined_response = answer
+            if follow_up_question:
+                combined_response += f"\n\n{follow_up_question}"
+            
+            # Ensure recommended_books is a list
+            if recommended_books is None:
+                recommended_books = []
+                
+            # Save the chat message to database
+            chatbot_service._save_chat_message(
+                user_id=user_id,
+                message=message,
+                response=combined_response,
+                language=language,
+                book_recommendations=recommended_books
+            )
+            
+            if recommended_books:
+                formatted_recommendations = []
+                for book in recommended_books:
+                    formatted_recommendations.append({
+                        'id': book.get('id', 0),
+                        'title': book.get('title', ''),
+                        'author': book.get('author', ''),
+                        'category': book.get('category', ''),
+                        'rating': book.get('rating', 0),
+                        'cover_url': book.get('cover_url', ''),
+                        'reason': ''
+                    })
+                recommended_books = formatted_recommendations
+
+            return jsonify({
+                'response': combined_response,
+                'language': language,
+                'follow_up_question': follow_up_question,
+                'recommended_books': recommended_books
+            }), 200
+            
+        except Exception as e:
+            # Log the full traceback for detailed debugging
+            logger.error(f"Error processing chatbot message: {str(e)}")
+            logger.error(traceback.format_exc())
+            
+            # For errors, return a 500 status
+            fallback_response = "I'm experiencing some technical difficulties at the moment. Please try again later."
+            
+            return jsonify({
+                'response': fallback_response,
+                'language': language,
+                'follow_up_question': "",
+                'recommended_books': []
+            }), 200
+            
     except Exception as e:
-        logger.error(f"Error processing chatbot message: {str(e)}")
+        logger.error(f"Critical error in process_message: {str(e)}")
         return jsonify({'error': 'Server error processing message'}), 500
 
 @chatbot_controller.route('/history', methods=['GET'])
@@ -67,21 +163,88 @@ def clear_chat_history():
     """
     try:
         user_id = get_jwt_identity()
-        # Clear chat history from database
-        ChatBotService.clear_user_chat_history(user_id)
-        # Clear conversation memory
-        ChatBotService().clear_conversation_memory(user_id)
-        return jsonify({'message': 'Chat history cleared successfully'}), 200
+        
+        # Try to clear both history and memory
+        success = ChatBotService().clear_conversation_memory(user_id)
+        
+        if success:
+            return jsonify({'message': 'Chat history cleared successfully'}), 200
+        else:
+            return jsonify({'message': 'Chat history partially cleared'}), 200
+            
     except Exception as e:
-        logger.error(f"Error clearing chat history: {str(e)}")
+        logger.error(f"Critical error in clear_chat_history: {str(e)}")
+        logger.error(traceback.format_exc())
         return jsonify({'error': 'Server error clearing chat history'}), 500
     
-
 @chatbot_controller.route('/refresh-vector-store', methods=['POST'])
 @jwt_required()
 def refresh_vector_store():
+    """
+    Refresh the vector store by reloading all books from the database.
+    """
     try:
-        ChatBotService().refresh_vector_store()
-        return jsonify({"message": "Vector store refreshed successfully."}), 200
+        success = ChatBotService().refresh_vector_store()
+        
+        if success:
+            return jsonify({"message": "Vector store refreshed successfully."}), 200
+        else:
+            return jsonify({"message": "Vector store refresh not available."}), 404
+            
     except Exception as e:
+        # Log the full error with traceback
+        logger.error(f"Error refreshing vector store: {str(e)}")
+        logger.error(traceback.format_exc())
+        
         return jsonify({"error": str(e)}), 500
+    
+    
+@chatbot_controller.route('/health', methods=['GET'])
+def health_check():
+    """
+    Check if the chatbot service is healthy.
+    """
+    try:
+        # Check if API keys are available
+        if not os.environ.get("OPENAI_API_KEY") or not os.environ.get("LANGSMITH_API_KEY"):
+            return jsonify({
+                'status': 'warning',
+                'message': 'API keys missing or incomplete',
+                'checks': {
+                    'openai_api': bool(os.environ.get("OPENAI_API_KEY")),
+                    'langsmith_api': bool(os.environ.get("LANGSMITH_API_KEY"))
+                }
+            }), 200
+        
+        # Check if the chatbot service can be initialized
+        chatbot_service = ChatBotService()
+        
+        # Check if vector store is initialized
+        vector_store_ok = hasattr(chatbot_service.chatbot, 'vector_store')
+        
+        # Check if graph is initialized
+        graph_ok = hasattr(chatbot_service.chatbot, 'graph')
+        
+        all_ok = vector_store_ok and graph_ok
+        
+        return jsonify({
+            'status': 'healthy' if all_ok else 'degraded',
+            'message': 'Chatbot service is running properly' if all_ok else 'Some components are not initialized',
+            'checks': {
+                'vector_store': vector_store_ok,
+                'graph': graph_ok
+            }
+        }), 200
+            
+    except Exception as e:
+        logger.error(f"Health check failed: {str(e)}")
+        return jsonify({
+            'status': 'unhealthy',
+            'message': f'Chatbot service error: {str(e)}',
+            'checks': {
+                'error': str(e)
+            }
+        }), 500
+        
+        
+        
