@@ -1,7 +1,10 @@
+# backend/app/controllers/account_requests_controller.py
+
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required
 from app.services.UserService import UserService
 import logging
+import requests
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
@@ -27,6 +30,22 @@ def approve_account_request(request_id):
         user = UserService.approve_account_request(request_id)
         if not user:
             return jsonify({'message': 'Request not found or already processed'}), 404
+        
+        # Send email notification
+        # -----------------------------------------------------------------------------------------
+        # Get the JWT token from the incoming request
+        auth_header = request.headers.get('Authorization')
+        if not auth_header:
+            logger.error("No Authorization header found in the request")
+        else:
+            headers = {'Authorization': auth_header}
+            response = requests.post('http://localhost:5050/email/send-account-approval-email', json={
+                'request_id': request_id
+            }, headers=headers)
+            if response.status_code != 200:
+                logger.error("Failed to send approval email: %s", response.text)            
+        # -----------------------------------------------------------------------------------------
+        
         return jsonify({
             'message': 'Account approved and created',
             'user': user.to_dict()
@@ -43,6 +62,24 @@ def reject_account_request(request_id):
         success = UserService.reject_account_request(request_id)
         if not success:
             return jsonify({'message': 'Request not found or already processed'}), 404
+        
+        # Send email notification
+        # -----------------------------------------------------------------------------------------
+        # Get the JWT token from the incoming request
+        auth_header = request.headers.get('Authorization')
+        if not auth_header:
+            logger.error("No Authorization header found in the request")
+        else:
+            headers = {'Authorization': auth_header}
+            response = requests.post('http://localhost:5050/email/send-account-request-action-email', json={
+                'request_id': request_id,
+                'action': 'reject'
+            }, headers=headers)
+            if response.status_code != 200:
+                logger.error("Failed to send rejection email: %s", response.text)
+        # -----------------------------------------------------------------------------------------
+        
+        
         return jsonify({'message': 'Account request rejected'}), 200
     except Exception as e:
         logger.error("Error rejecting account request: %s", str(e))
@@ -56,6 +93,23 @@ def delete_account_request(request_id):
         success = UserService.reject_account_request(request_id)  # Reuse reject logic for DELETE
         if not success:
             return jsonify({'message': 'Request not found or already processed'}), 404
+        
+        # Send email notification
+        # -----------------------------------------------------------------------------------------
+        # Get the JWT token from the incoming request
+        auth_header = request.headers.get('Authorization')
+        if not auth_header:
+            logger.error("No Authorization header found in the request")
+        else:
+            headers = {'Authorization': auth_header}
+            response = requests.post('http://localhost:5050/email/send-account-request-action-email', json={
+                'request_id': request_id,
+                'action': 'delete'
+            }, headers=headers)
+            if response.status_code != 200:
+                logger.error("Failed to send deletion email: %s", response.text)
+        # -----------------------------------------------------------------------------------------
+        
         return jsonify({'message': 'Account request deleted'}), 200
     except Exception as e:
         logger.error("Error deleting account request: %s", str(e))
@@ -70,6 +124,23 @@ def set_pending_account_request(request_id):
         success = UserService.set_account_request_pending(request_id)
         if not success:
             return jsonify({'message': 'Request not found'}), 404
+        
+        # Send email notification
+        # -----------------------------------------------------------------------------------------
+        # Get the JWT token from the incoming request
+        auth_header = request.headers.get('Authorization')
+        if not auth_header:
+            logger.error("No Authorization header found in the request")
+        else:
+            headers = {'Authorization': auth_header}
+            response = requests.post('http://localhost:5050/email/send-account-request-action-email', json={
+                'request_id': request_id,
+                'action': 'set-pending'
+            }, headers=headers)
+            if response.status_code != 200:
+                logger.error("Failed to send pending email: %s", response.text)
+        # -----------------------------------------------------------------------------------------
+        
         return jsonify({'message': 'Account request status updated to pending'}), 200
     except Exception as e:
         logger.error("Error updating account request status: %s", str(e))
