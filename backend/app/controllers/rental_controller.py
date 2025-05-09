@@ -1,10 +1,20 @@
+# backend/app/controllers/rental_controller.py
+
+
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from app.services.RentalService import RentalService
 from app.model.User import User
+from app.model.Rental import Rental
 from sqlalchemy.exc import IntegrityError
+import logging
+import requests
 
 rental_controller = Blueprint('rental_controller', __name__)
+
+# configure logging
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 
 def check_admin():
     """Helper to verify if the current user is an admin."""
@@ -31,6 +41,24 @@ def create_rental():
             return jsonify({'error': 'user_id and book_id are required'}), 400
 
         rental = RentalService.create_rental(data['user_id'], data['book_id'], update_book=True)
+        
+        # Send email notification
+        # -----------------------------------------------------------------------------------------
+        # Get the JWT token from the incoming request
+        auth_header = request.headers.get('Authorization')
+        if not auth_header:
+            logger.error("No Authorization header found in the request")
+        else:
+            headers = {'Authorization': auth_header}
+            response = requests.post('http://localhost:5050/email/send-rental-email', json={
+                'type': 'borrow',
+                'book_title': rental.book.title,
+                'due_date': rental.returned_at.strftime('%Y-%m-%d %H:%M:%S') if rental.returned_at else None,
+            }, headers=headers)
+            if response.status_code != 200:
+                logger.error("Failed to send rental email: %s", response.text)
+        # -----------------------------------------------------------------------------------------
+        
         return jsonify(rental.to_dict()), 201
     except ValueError as e:
         return jsonify({'error': str(e)}), 400
@@ -161,6 +189,25 @@ def bulk_delete_rentals():
             return jsonify({'error': 'rental_ids array is required'}), 400
 
         result = RentalService.bulk_delete_rentals(data['rental_ids'])
+        
+        # Send email notification
+        # -----------------------------------------------------------------------------------------
+        # Get the JWT token from the incoming request
+        auth_header = request.headers.get('Authorization')
+        if not auth_header:
+            logger.error("No Authorization header found in the request")
+        else:
+            headers = {'Authorization': auth_header}
+            for rental_id in data['rental_ids']:
+                rental = Rental.query.get(rental_id)
+                if rental and rental.book and rental.book.title:
+                    response = requests.post('http://localhost:5050/email/send-rental-email', json={
+                        'type': 'delete',
+                        'book_title': rental.book.title
+                    }, headers=headers)
+                    if response.status_code != 200:
+                        logger.error("Failed to send delete rental email for rental ID %s: %s", rental_id, response.text)
+        # -----------------------------------------------------------------------------------------
         return jsonify(result), 200
     except ValueError as e:
         return jsonify({'error': str(e)}), 400
@@ -197,6 +244,23 @@ def return_rental(rental_id):
         rental = RentalService.return_book(rental_id)
         if not rental:
             return jsonify({'error': 'Rental not found'}), 404
+        
+        # Send email notification
+        # -----------------------------------------------------------------------------------------
+        # Get the JWT token from the incoming request
+        auth_header = request.headers.get('Authorization')
+        if not auth_header:
+            logger.error("No Authorization header found in the request")
+        else:
+            headers = {'Authorization': auth_header}
+            response = requests.post('http://localhost:5050/email/send-rental-email', json={
+                'type': 'return',
+                'book_title': rental.book.title
+            }, headers=headers)
+            if response.status_code != 200:
+                logger.error("Failed to send return email: %s", response.text)
+        # -----------------------------------------------------------------------------------------
+        
         return jsonify(rental.to_dict()), 200
     except ValueError as e:
         return jsonify({'error': str(e)}), 400
