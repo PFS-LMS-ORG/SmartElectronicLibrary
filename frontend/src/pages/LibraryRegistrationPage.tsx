@@ -81,10 +81,11 @@ const LibraryRegistrationPage: React.FC = () => {
           password: formData.password,
         });
         // console.log('Registration successful, navigating to login');
-        toast.success(response.message);
+        toast.success(response.message || 'Registration submitted, awaiting approval email.');
         navigate('/login');
       } catch (error: any) {
         console.error('Registration failed:', error.response?.data || error.message);
+        toast.error(error.response?.data?.message || 'Registration failed, email not sent');
         setErrors({ server: error.response?.data?.message || 'Registration failed' });
       } finally {
         setIsSubmitting(false); // Stop spinner

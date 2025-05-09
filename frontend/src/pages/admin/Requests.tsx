@@ -133,20 +133,19 @@ const AdminRequestsPage: React.FC = () => {
         throw new Error(`HTTP error! Status: ${response.status}`);
       }
 
-      // Update request status locally
       setRequests((prev) =>
         prev.map((req) =>
           req.id === requestId ? { ...req, status: action === 'approve' ? 'approved' : 'rejected' } : req
         )
       );
       setToast({ 
-        message: `Request ${action === 'approve' ? 'approved' : 'rejected'} successfully`, 
+        message: `Request ${action === 'approve' ? 'approved' : 'rejected'} successfully. Email notification sent.`,
         type: 'success' 
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : `Failed to ${action} request`);
       setToast({ 
-        message: err instanceof Error ? err.message : `Failed to ${action} request`, 
+        message: err instanceof Error ? err.message : `Failed to ${action} request. Email not sent.`,
         type: 'error' 
       });
       console.error(`Error ${action}ing request:`, err);

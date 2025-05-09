@@ -1,3 +1,6 @@
+# backend/app/controllers/auth_controller.py
+
+import os
 from flask import Blueprint, request, jsonify
 from flask_bcrypt import Bcrypt
 from app.db import db
@@ -6,6 +9,7 @@ from app.model.AccountRequest import AccountRequest
 from app.services.UserService import UserService
 from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity
 import logging
+import requests
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
@@ -68,6 +72,24 @@ def register():
         if not account_request:
             return jsonify({'message': 'Email already requested'}), 400
 
+        # Send registration email using service token
+        # -----------------------------------------------------------------------------------------
+        service_token = os.environ.get('EMAILJS_SERVICE_TOKEN')
+        if not service_token:
+            logger.error("Service token not found in environment")
+        else:
+            headers = {
+                'Authorization': f'Bearer {service_token}'  # Include the service token
+            }
+            response = requests.post('http://localhost:5050/email/send-registration-email', json={
+                'email': email,
+                'name': name,
+                'action': 'register'
+            }, headers=headers)
+            if response.status_code != 200:
+                logger.error("Failed to send registration email: %s", response.text)
+        # -----------------------------------------------------------------------------------------
+
         logger.debug("Account request created for: %s", email)
         return jsonify({
             'message': 'Account request submitted. Awaiting admin approval.',
@@ -76,7 +98,6 @@ def register():
     except Exception as e:
         logger.error("Register error: %s", str(e))
         return jsonify({'message': 'Server error during registration'}), 500
-
 
 @auth_bp.route('/me', methods=['GET'])
 @jwt_required()

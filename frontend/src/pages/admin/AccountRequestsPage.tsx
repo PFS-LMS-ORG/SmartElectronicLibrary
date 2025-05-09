@@ -130,9 +130,9 @@ const AccountRequestsPage: React.FC = () => {
       }
 
       setRequests(requests.filter((req) => req.id !== id));
-      toast.success('Request deleted successfully');
+      toast.success('Request deleted successfully. Email notification sent.');
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to delete request');
+      toast.error(err instanceof Error ? err.message : 'Failed to delete request. Email not sent.');
     }
   };
 
@@ -157,10 +157,10 @@ const AccountRequestsPage: React.FC = () => {
         )
       );
       
-      toast.success('Account request approved successfully');
+      toast.success('Account request approved successfully. Email notification sent.');
       setShowModal(false);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to approve request');
+      toast.error(err instanceof Error ? err.message : 'Failed to approve request. Email not sent.');
     }
   };
 
@@ -185,10 +185,10 @@ const AccountRequestsPage: React.FC = () => {
         )
       );
       
-      toast.success('Account request rejected successfully');
+      toast.success('Account request rejected successfully. Email notification sent.');
       setShowModal(false);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to reject request');
+      toast.error(err instanceof Error ? err.message : 'Failed to reject request. Email not sent.');
     }
   };
 
@@ -214,10 +214,10 @@ const AccountRequestsPage: React.FC = () => {
         )
       );
       
-      toast.success('Account request status updated to pending');
+      toast.success('Account request status updated to pending. Email notification sent.');
       setShowModal(false);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to update request status');
+      toast.error(err instanceof Error ? err.message : 'Failed to update request status. Email not sent.');
     }
   };
 

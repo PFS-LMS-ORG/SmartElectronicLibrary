@@ -11,6 +11,7 @@ from app.controllers.rental_controller import rental_controller
 from app.controllers.account_requests_controller import account_requests_bp
 from app.controllers.chatbot_controller import chatbot_controller
 from app.controllers.article_controller import article_controller
+from app.controllers.email_controller import email_controller
 from dotenv import load_dotenv
 import os
 import logging
@@ -44,6 +45,7 @@ def create_app():
     app.register_blueprint(account_requests_bp, url_prefix='/admin')
     app.register_blueprint(chatbot_controller, url_prefix='/chatbot')
     app.register_blueprint(article_controller)
+    app.register_blueprint(email_controller, url_prefix='/email')
 
     logger.debug("App creation complete")
     return app
