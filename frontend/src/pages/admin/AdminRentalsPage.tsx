@@ -346,15 +346,15 @@ const AdminRentalsPage: React.FC = () => {
       if (action === 'delete') {
         setRentals((prev) => prev.filter((r) => r.id !== rentalId));
         setSelectedIds((prev) => prev.filter((id) => id !== rentalId));
-        setToast({ message: 'Rental deleted successfully', type: 'success' });
+        setToast({ message: 'Rental deleted successfully. Email notification sent.', type: 'success' });
       } else {
         const updatedRental = await response.json();
         setRentals((prev) => prev.map((r) => (r.id === rentalId ? { ...r, ...updatedRental } : r)));
-        setToast({ message: 'Rental marked as returned', type: 'success' });
+        setToast({ message: 'Rental marked as returned. Email notification sent.', type: 'success' });
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : `Failed to ${action} rental`);
-      setToast({ message: err instanceof Error ? err.message : `Failed to ${action} rental`, type: 'error' });
+      setToast({ message: err instanceof Error ? err.message : `Failed to ${action} rental. Email not sent.`, type: 'error' });
     } finally {
       setActionLoading((prev) => ({ ...prev, [rentalId]: '' }));
     }
@@ -388,7 +388,7 @@ const AdminRentalsPage: React.FC = () => {
 
       const updated = await response.json();
       setRentals((prev) => prev.map((r) => (r.id === updatedRental.id ? { ...r, ...updated } : r)));
-      setToast({ message: 'Rental updated successfully', type: 'success' });
+      setToast({ message: 'Rental updated successfully. Email notification sent.', type: 'success' });
     } catch (err) {
       throw err;
     }
@@ -419,10 +419,10 @@ const AdminRentalsPage: React.FC = () => {
 
       setRentals((prev) => prev.filter((r) => !selectedIds.includes(r.id)));
       setSelectedIds([]);
-      setToast({ message: `Deleted ${selectedIds.length} rentals`, type: 'success' });
+      setToast({ message: `Deleted ${selectedIds.length} rentals. Email notifications sent.`, type: 'success' });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete rentals');
-      setToast({ message: err instanceof Error ? err.message : 'Failed to delete rentals', type: 'error' });
+      setToast({ message: err instanceof Error ? err.message : 'Failed to delete rentals. Emails not sent.', type: 'error' });
     }
   };
 
