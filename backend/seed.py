@@ -2,6 +2,7 @@ from app import create_app
 from app.db import db
 from app.model import Book, Author, Category, User, Rental, RentalRequest, Article, ArticleAuthor, ArticleMeta, ArticleLike, ArticleBookmark
 from datetime import datetime, timedelta
+from flask_jwt_extended import create_access_token
 import json
 
 app = create_app()
@@ -71,6 +72,12 @@ with app.app_context():
     user2.set_password("password123")
     user3 = User(name="Charlie", email="charlie@example.com", role="admin")
     user3.set_password("password123")
+    
+    # Generate a long-lived token for user3 (service account)
+    service_token = create_access_token(identity=str(user3.id), expires_delta=timedelta(days=365))
+    print(f"🌱 Generated service token for user3 (Charlie): {service_token}")
+    print("Please add the following to your .env file as EMAILJS_SERVICE_TOKEN:")
+    print(f"EMAILJS_SERVICE_TOKEN={service_token}")
 
     # Add rentals (use first few books to avoid index errors)
     rentals = []
