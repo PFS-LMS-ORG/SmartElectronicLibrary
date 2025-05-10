@@ -1,17 +1,17 @@
 from app.db import db
 from flask_bcrypt import Bcrypt
+from datetime import datetime
 
 bcrypt = Bcrypt()
 
 class User(db.Model):
     __tablename__ = 'users'
-
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
     email = db.Column(db.String(120), unique=True, nullable=False)
     password_hash = db.Column(db.String(128), nullable=False)
     role = db.Column(db.String(10), default='user')
-
+    date_joined = db.Column(db.DateTime, default=datetime.utcnow)  # Added date_joined field
     rentals = db.relationship('Rental', back_populates='user')
     rental_requests = db.relationship('RentalRequest', back_populates='user')
     chat_messages = db.relationship("ChatMessage", back_populates="user")
@@ -35,6 +35,7 @@ class User(db.Model):
             'name': self.name,
             'email': self.email,
             'role': self.role,
+            'date_joined': self.date_joined.strftime("%Y-%m-%d %H:%M:%S") if self.date_joined else None,
             'rentals': [rental.to_dict() for rental in self.rentals],
             'rental_requests': [request.to_dict() for request in self.rental_requests]
-    }
+        }

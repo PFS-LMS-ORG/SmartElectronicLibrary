@@ -1,3 +1,4 @@
+import axios from "axios";
 import React, { useEffect, useState } from "react";
 
 const BookGallery: React.FC = () => {
@@ -11,10 +12,10 @@ const BookGallery: React.FC = () => {
   const fetchBooks = async (query: string) => {
     setIsLoading(true);
     try {
-      const response = await fetch(
-        `https://www.googleapis.com/books/v1/volumes?q=${query}&maxResults=12`
+      const response = await axios.get(
+        `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(query)}&maxResults=12`
       );
-      const data = await response.json();
+      const data = response.data;
       
       if (data.items) {
         const bookData = data.items.map((book: any) => ({

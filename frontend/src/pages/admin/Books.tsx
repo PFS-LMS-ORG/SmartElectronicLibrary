@@ -10,15 +10,12 @@ import {
   Edit,
   ArrowUpDown,
   Plus,
-  RefreshCw,
-  ChevronLeft,
-  ChevronRight,
-  ChevronsLeft,
-  ChevronsRight,
   Filter,
   X,
 } from "lucide-react";
 import { toast } from "react-toastify";
+import Pagination from "@/components/common/Pagination";
+import axios from "axios";
 
 interface Book {
   id: number;
@@ -81,98 +78,78 @@ const BooksPage: React.FC = () => {
 
   const fetchCategories = async () => {
     try {
-      const token = localStorage.getItem("token");
-      if (!token) {
-        throw new Error("No authentication token found");
-      }
+        const token = localStorage.getItem("token");
+        if (!token) {
+            throw new Error("No authentication token found");
+        }
 
-      const response = await fetch("/api/books/categories", {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-      });
+        const response = await axios.get("/api/books/categories", {
+            headers: {
+                Authorization: `Bearer ${token}`,
+                "Content-Type": "application/json",
+            },
+        });
 
-      if (!response.ok) {
-        throw new Error(`HTTP error! Status: ${response.status}`);
-      }
-
-      const data = await response.json();
-      // Extract category names from the response
-      const categories = data.map((category: any) => category.name);
-      setAllCategories(categories);
-    } catch (error) {
-      console.error("Error fetching categories:", error);
+        const categories = response.data.map((category: any) => category.name);
+        setAllCategories(categories);
+    } catch (error: any) {
+        console.error("Error fetching categories:", {
+            message: error.message,
+            response: error.response?.data,
+            status: error.response?.status,
+        });
     }
   };
 
   const fetchBooks = async (query: string = "", page: number = 1, itemsPerPage: number = 10, category: string = "") => {
     try {
-      setLoading(true);
-      setError(null);
+        setLoading(true);
+        setError(null);
 
-      const token = localStorage.getItem("token");
-      if (!token) {
-        throw new Error("No authentication token found");
-      }
-
-      // Build query parameters
-      const params = new URLSearchParams();
-      if (query) params.append("search", query);
-      params.append("page", page.toString());
-      params.append("per_page", itemsPerPage.toString());
-      if (category) params.append("category", category);
-
-      const url = `/api/books?${params.toString()}`;
-      
-      const response = await fetch(url, {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-      });
-
-      if (!response.ok) {
-        if (response.status === 401) {
-          throw new Error("Unauthorized: Please log in again");
+        const token = localStorage.getItem("token");
+        if (!token) {
+            throw new Error("No authentication token found");
         }
-        if (response.status === 403) {
-          throw new Error("Forbidden: Admin access required");
-        }
-        if (response.status === 500) {
-          throw new Error("Server error: Unable to process request");
-        }
-        throw new Error(`HTTP error! Status: ${response.status}`);
-      }
 
-      const data: PaginationData = await response.json();
-      console.log("Books response:", data);
-      
-      if (!data.books || !Array.isArray(data.books)) {
-        throw new Error("Invalid response format: Expected { books: [...], total_count, total_pages }");
-      }
+        const params = new URLSearchParams();
+        if (query) params.append("search", query);
+        params.append("page", page.toString());
+        params.append("per_page", itemsPerPage.toString());
+        if (category) params.append("category", category);
 
-      setBooks(data.books);
-      setTotalBooks(data.total_count);
-      setTotalPages(data.total_pages);
-      setError(null);
-    } catch (err) {
-      const errorMessage =
-        err instanceof Error
-          ? err.message
-          : "Failed to fetch books. Please try again later.";
-      setError(errorMessage);
-      console.error("Error fetching books:", err);
-      setBooks([]);
-      setTotalBooks(0);
-      setTotalPages(1);
+        const response = await axios.get(`/api/books?${params.toString()}`, {
+            headers: {
+                Authorization: `Bearer ${token}`,
+                "Content-Type": "application/json",
+            },
+        });
+
+        if (!response.data.books || !Array.isArray(response.data.books)) {
+            throw new Error("Invalid response format: Expected { books: [...], total_count, total_pages }");
+        }
+
+        setBooks(response.data.books);
+        setTotalBooks(response.data.total_count);
+        setTotalPages(response.data.total_pages);
+        setError(null);
+    } catch (err: any) {
+        const errorMessage =
+            err instanceof Error
+                ? err.message
+                : "Failed to fetch books. Please try again later.";
+        setError(errorMessage);
+        console.error("Error fetching books:", {
+            message: err.message,
+            response: err.response?.data,
+            status: err.response?.status,
+        });
+        setBooks([]);
+        setTotalBooks(0);
+        setTotalPages(1);
     } finally {
-      setLoading(false);
+        setLoading(false);
     }
   };
-
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     setCurrentPage(1); // Reset to first page on new search
@@ -190,41 +167,33 @@ const BooksPage: React.FC = () => {
 
   const handleDeleteBook = async (bookId: number) => {
     if (window.confirm("Are you sure you want to delete this book?")) {
-      try {
-        const token = localStorage.getItem("token");
-        if (!token) {
-          throw new Error("No authentication token found");
+        try {
+            const token = localStorage.getItem("token");
+            if (!token) {
+                throw new Error("No authentication token found");
+            }
+
+            await axios.delete(`/api/books/${bookId}`, {
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                    "Content-Type": "application/json",
+                },
+            });
+
+            toast.success("Book deleted successfully");
+            fetchBooks(searchQuery, currentPage, perPage, categoryFilter);
+        } catch (err: any) {
+            const errorMessage =
+                err instanceof Error
+                    ? err.message
+                    : "Failed to delete book. Please try again.";
+            setError(errorMessage);
+            console.error("Error deleting book:", {
+                message: err.message,
+                response: err.response?.data,
+                status: err.response?.status,
+            });
         }
-
-        const response = await fetch(`/api/books/${bookId}`, {
-          method: "DELETE",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-          },
-        });
-
-        if (!response.ok) {
-          if (response.status === 403) {
-            throw new Error("Forbidden: Admin access required to delete books");
-          }
-          if (response.status === 404) {
-            throw new Error("Book not found");
-          }
-          throw new Error(`HTTP error! Status: ${response.status}`);
-        }
-
-        // After successful deletion, refresh the current page
-        toast.success("Book deleted successfully");
-        fetchBooks(searchQuery, currentPage, perPage, categoryFilter);
-      } catch (err) {
-        const errorMessage =
-          err instanceof Error
-            ? err.message
-            : "Failed to delete book. Please try again.";
-        setError(errorMessage);
-        console.error("Error deleting book:", err);
-      }
     }
   };
 
@@ -282,29 +251,6 @@ const BooksPage: React.FC = () => {
     return colorVariants[bookId % colorVariants.length];
   };
 
-  // Generate page numbers for pagination
-  const getPageNumbers = () => {
-    const pages = [];
-    const maxPagesToShow = 5; // Show at most 5 page numbers
-    
-    let startPage = Math.max(1, currentPage - Math.floor(maxPagesToShow / 2));
-    let endPage = Math.min(totalPages, startPage + maxPagesToShow - 1);
-    
-    // Adjust start page if necessary
-    if (endPage - startPage + 1 < maxPagesToShow) {
-      startPage = Math.max(1, endPage - maxPagesToShow + 1);
-    }
-    
-    for (let i = startPage; i <= endPage; i++) {
-      pages.push(i);
-    }
-    
-    return pages;
-  };
-
-  const refreshCurrentPage = () => {
-    fetchBooks(searchQuery, currentPage, perPage, categoryFilter);
-  };
 
   const clearFilters = () => {
     setSearchQuery("");
@@ -599,112 +545,19 @@ const BooksPage: React.FC = () => {
             </div>
           )}
 
-          {/* Footer with pagination */}
-          <div className="p-4 border-t border-[#2a2f42] flex flex-col md:flex-row justify-between items-center gap-4">
-            <div className="text-sm text-gray-400 flex flex-col sm:flex-row items-center gap-2">
-              <div>
-                Showing{" "}
-                <span className="font-medium text-gray-300">
-                  {books.length > 0 
-                    ? `${(currentPage - 1) * perPage + 1}-${Math.min(currentPage * perPage, totalBooks)}` 
-                    : "0"}
-                </span>{" "}
-                of{" "}
-                <span className="font-medium text-gray-300">{totalBooks}</span>{" "}
-                books
-              </div>
-              
-              <div className="flex items-center sm:ml-4">
-                <span className="mr-2 text-gray-400">Show:</span>
-                <select
-                  value={perPage}
-                  onChange={handlePerPageChange}
-                  className="bg-[#1e263a] border border-[#2a2f42] text-gray-300 rounded px-2 py-1"
-                >
-                  <option value="5">5</option>
-                  <option value="10">10</option>
-                  <option value="25">25</option>
-                  <option value="50">50</option>
-                </select>
-              </div>
-            </div>
+          {/* Enhnaced Pagination */}
+          <Pagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            onPageChange={handlePageChange}
+            onPerPageChange={handlePerPageChange}
+            perPage={perPage}
+            totalItems={totalBooks}
+            itemsPerPageOptions={[5, 10, 20, 50]}
+            itemLabel="books"
+            colorScheme="indigo"
+          />
 
-            <div className="flex items-center gap-1">
-              <button
-                onClick={refreshCurrentPage}
-                className="flex items-center px-3 py-1.5 border border-[#2a2f42] rounded-md text-gray-300 bg-[#1e263a] hover:bg-[#252b3d] transition-colors mr-2"
-                title="Refresh"
-              >
-                <RefreshCw size={14} className="mr-1" /> Refresh
-              </button>
-
-              <button
-                onClick={() => handlePageChange(1)}
-                disabled={currentPage === 1}
-                className={`p-2 rounded-md ${
-                  currentPage === 1
-                    ? "text-gray-500 cursor-not-allowed"
-                    : "text-gray-300 hover:bg-[#252b3d]"
-                }`}
-                title="First page"
-              >
-                <ChevronsLeft size={16} />
-              </button>
-              
-              <button
-                onClick={() => handlePageChange(currentPage - 1)}
-                disabled={currentPage === 1}
-                className={`p-2 rounded-md ${
-                  currentPage === 1
-                    ? "text-gray-500 cursor-not-allowed"
-                    : "text-gray-300 hover:bg-[#252b3d]"
-                }`}
-                title="Previous page"
-              >
-                <ChevronLeft size={16} />
-              </button>
-              
-              {getPageNumbers().map((page) => (
-                <button
-                  key={page}
-                  onClick={() => handlePageChange(page)}
-                  className={`px-3 py-1 rounded-md ${
-                    currentPage === page
-                      ? "bg-indigo-900/50 text-indigo-300"
-                      : "text-gray-300 hover:bg-[#252b3d]"
-                  }`}
-                >
-                  {page}
-                </button>
-              ))}
-              
-              <button
-                onClick={() => handlePageChange(currentPage + 1)}
-                disabled={currentPage === totalPages}
-                className={`p-2 rounded-md ${
-                  currentPage === totalPages
-                    ? "text-gray-500 cursor-not-allowed"
-                    : "text-gray-300 hover:bg-[#252b3d]"
-                }`}
-                title="Next page"
-              >
-                <ChevronRight size={16} />
-              </button>
-              
-              <button
-                onClick={() => handlePageChange(totalPages)}
-                disabled={currentPage === totalPages}
-                className={`p-2 rounded-md ${
-                  currentPage === totalPages
-                    ? "text-gray-500 cursor-not-allowed"
-                    : "text-gray-300 hover:bg-[#252b3d]"
-                }`}
-                title="Last page"
-              >
-                <ChevronsRight size={16} />
-              </button>
-            </div>
-          </div>
         </div>
       </div>
     </Layout>

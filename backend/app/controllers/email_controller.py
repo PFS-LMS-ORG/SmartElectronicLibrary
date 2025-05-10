@@ -1,11 +1,11 @@
 # backend/app/controllers/email_controller.py
 
-from flask import Blueprint, request, jsonify, request
+from flask import Blueprint, request, jsonify
 from app.services.EmailService import EmailService
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from app.model.User import User
 from app.services.RentalRequestService import RentalRequestService
-from app.model import AccountRequest
+from app.model.AccountRequest import AccountRequest
 
 email_controller = Blueprint('email', __name__)
 # Create an instance of EmailService
@@ -17,7 +17,7 @@ def send_registration_email():
     email = data.get('email')
     name = data.get('name')
     action = data.get('action')  # e.g., 'register', 'approve'
-    if not email or not name:
+    if not email or not name or not action:
         return jsonify({'message': 'Email and name are required'}), 400
     result = email_service.send_email(
         email, 
@@ -30,13 +30,17 @@ def send_registration_email():
 @jwt_required()
 def send_account_approval_email():
     data = request.get_json()
-    request_id = data.get('request_id')
-    if not request_id:
-        return jsonify({'message': 'Request ID is required'}), 400
-    user = User.query.filter_by(account_request_id=request_id).first()
+    email = data.get('email')
+    name = data.get('name')
+    action = data.get('action')  # e.g., 'approve'
+    
+    if not email or not name:
+        return jsonify({'message': 'Email and name are required'}), 400
+    
+    user = User.query.filter_by(email=email).first()
     if not user:
         return jsonify({'message': 'User not found'}), 404
-    result = email_service.send_email(user.email, 'account_approved', {'userName': user.name})
+    result = email_service.send_email(email, 'account_approved', {'userName': name, 'action': action})
     return jsonify(result), 200 if result['success'] else 500
 
 @email_controller.route('/send-rental-email', methods=['POST'])
@@ -71,7 +75,7 @@ def send_request_action_email():
         return jsonify({'message': 'Request not found'}), 404
     if 'book' not in rental_request or 'title' not in rental_request.get('book', {}):
         return jsonify({'message': 'Invalid rental request data'}), 400
-    user = User.query.get(rental_request['user_id'])  # Updated reference
+    user = User.query.get(rental_request['user_id'])  
     if not user:
         return jsonify({'message': 'User not found'}), 404
     params = {

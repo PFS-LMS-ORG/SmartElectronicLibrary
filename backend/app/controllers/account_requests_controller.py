@@ -16,20 +16,48 @@ account_requests_bp = Blueprint('account_requests', __name__)
 def get_account_requests():
     try:
         logger.debug("Fetching account requests")
-        requests = UserService.get_account_requests()
-        return jsonify([req.to_dict() for req in requests]), 200
+        
+        # Get pagination parameters
+        page = int(request.args.get('page', 1))
+        per_page = int(request.args.get('per_page', 10))
+        status = request.args.get('status', 'all')
+        search = request.args.get('search', '').strip()
+        
+        # Limit per_page to reasonable values
+        per_page = min(max(per_page, 5), 50)  # Between 5 and 50
+        
+        # Get paginated account requests
+        requests_data, total_count, total_pages = UserService.get_paginated_account_requests(
+            page=page,
+            per_page=per_page,
+            status=status,
+            search=search
+        )
+        
+        # Return the response with pagination data
+        return jsonify({
+            'requests': [req.to_dict() for req in requests_data],
+            'total_count': total_count,
+            'total_pages': total_pages,
+            'page': page,
+            'per_page': per_page
+        }), 200
     except Exception as e:
         logger.error("Error fetching account requests: %s", str(e))
         return jsonify({'message': 'Server error'}), 500
+
+
 
 @account_requests_bp.route('/account-requests/<int:request_id>/approve', methods=['POST'])
 @jwt_required()
 def approve_account_request(request_id):
     try:
         logger.debug("Approving account request %s", request_id)
+            
         user = UserService.approve_account_request(request_id)
         if not user:
             return jsonify({'message': 'Request not found or already processed'}), 404
+                
         
         # Send email notification
         # -----------------------------------------------------------------------------------------
@@ -40,12 +68,15 @@ def approve_account_request(request_id):
         else:
             headers = {'Authorization': auth_header}
             response = requests.post('http://localhost:5050/email/send-account-approval-email', json={
-                'request_id': request_id
+                'email' : user.email,
+                'name' : user.name,
+                'action' : 'approve'
             }, headers=headers)
             if response.status_code != 200:
                 logger.error("Failed to send approval email: %s", response.text)            
         # -----------------------------------------------------------------------------------------
         
+                
         return jsonify({
             'message': 'Account approved and created',
             'user': user.to_dict()
