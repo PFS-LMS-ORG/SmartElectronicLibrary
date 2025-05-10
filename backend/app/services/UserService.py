@@ -1,12 +1,61 @@
+# backend/app/services/UserService.py
+
 from app.model.User import User
 from app.model.AccountRequest import AccountRequest
 from app.db import db
 from datetime import datetime
+from sqlalchemy import or_
+import math
 
 class UserService:
     @staticmethod
     def get_all_users():
         return User.query.all()
+        
+    @staticmethod
+    def get_paginated_users(page=1, per_page=10, search='', role=None):
+        """
+        Get paginated users with optional filtering.
+        
+        Args:
+            page (int): The page number (1-indexed)
+            per_page (int): Number of items per page
+            search (str): Search query for name or email
+            role (str): Filter by user role
+            
+        Returns:
+            tuple: (users, total_count, total_pages)
+        """
+        query = User.query
+        
+        # Apply search filter if present
+        if search:
+            search_term = f"%{search}%"
+            query = query.filter(
+                or_(
+                    User.name.ilike(search_term),
+                    User.email.ilike(search_term)
+                )
+            )
+        
+        # Apply role filter if present
+        if role:
+            query = query.filter(User.role == role)
+        
+        # Count total users matching the filters
+        total_count = query.count()
+        
+        # Calculate total pages
+        total_pages = math.ceil(total_count / per_page) if total_count > 0 else 1
+        
+        # Ensure page is within valid range
+        page = max(1, min(page, total_pages))
+        
+        # Get paginated results
+        offset = (page - 1) * per_page
+        users = query.order_by(User.id).offset(offset).limit(per_page).all()
+        
+        return users, total_count, total_pages
 
     @staticmethod
     def get_user_by_id(user_id):
@@ -42,6 +91,11 @@ class UserService:
         user = User.query.get(user_id)
         if not user:
             return False
+        
+        # Add safety check to prevent deleting admin users
+        if user.role == 'admin':
+            return False
+            
         db.session.delete(user)
         db.session.commit()
         return True
@@ -66,6 +120,53 @@ class UserService:
     def get_account_requests():
         """Retrieve all account requests."""
         return AccountRequest.query.all()
+    
+    @staticmethod
+    def get_paginated_account_requests(page=1, per_page=10, status='all', search=''):
+        """
+        Get paginated account requests with optional filtering.
+        
+        Args:
+            page (int): The page number (1-indexed)
+            per_page (int): Number of items per page
+            status (str): Filter by status ('all', 'pending', 'approved', 'rejected')
+            search (str): Search query for name or email
+            
+        Returns:
+            tuple: (account_requests, total_count, total_pages)
+        """
+        query = AccountRequest.query
+        
+        # Apply status filter if present
+        if status and status != 'all':
+            query = query.filter(AccountRequest.status == status)
+        
+        # Apply search filter if present
+        if search:
+            search_term = f"%{search}%"
+            query = query.filter(
+                or_(
+                    AccountRequest.name.ilike(search_term),
+                    AccountRequest.email.ilike(search_term),
+                    AccountRequest.id.in_([int(search) if search.isdigit() else 0])
+                )
+            )
+        
+        # Count total account requests matching the filters
+        total_count = query.count()
+        
+        # Calculate total pages
+        total_pages = math.ceil(total_count / per_page) if total_count > 0 else 1
+        
+        # Ensure page is within valid range
+        page = max(1, min(page, total_pages))
+        
+        # Get paginated results
+        offset = (page - 1) * per_page
+        account_requests = query.order_by(AccountRequest.created_at.desc()).offset(offset).limit(per_page).all()
+        
+        return account_requests, total_count, total_pages
+
 
     @staticmethod
     def get_account_request_by_id(request_id):
