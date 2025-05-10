@@ -2,11 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { motion } from 'framer-motion';
-import { Search, BookOpen, Clock, Filter, X, Tag, Bookmark, Eye, Heart, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react';
+import { Search, BookOpen, Filter, X, Tag, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react';
 import BackgroundWrapper from '@/components/ui/BackgroundWrapper';
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'react-toastify';
 import { useLocation } from 'react-router-dom';
+import ArticleCard from '@/components/catalog/ArticleCard';
 
 // Define interfaces based on the requirements
 interface Article {
@@ -45,8 +46,6 @@ interface ArticlesResponse {
 }
 
 const ArticlesPage: React.FC = () => {
-
-
   const location = useLocation();
   const queryParams = new URLSearchParams(location.search);
   const initialTag = queryParams.get('tag') || '';
@@ -107,7 +106,6 @@ const ArticlesPage: React.FC = () => {
         setTotalCount(total_count);
         setTotalPages(total_pages);
 
-
         // Fetch user's liked and bookmarked articles
         try {
           const [likesResponse, bookmarksResponse] = await Promise.all([
@@ -140,8 +138,6 @@ const ArticlesPage: React.FC = () => {
 
     fetchArticles();
   }, [isAuthenticated, isAuthLoading, navigate, currentPage, searchQuery, selectedCategory, selectedTag, initialTag]);
-
-
 
   useEffect(() => {
     setSelectedTag(initialTag);
@@ -188,7 +184,6 @@ const ArticlesPage: React.FC = () => {
         { headers: { Authorization: `Bearer ${token}` } }
       );
 
-
       // Show toast notification
       toast.success(isLiked ? 'Article unliked' : 'Article liked', {
         position: 'bottom-center',
@@ -217,7 +212,7 @@ const ArticlesPage: React.FC = () => {
       console.error('Error toggling like:', error);
     }
   };
-  
+
   const handleBookmarkToggle = async (articleId: string, e: React.MouseEvent) => {
     e.stopPropagation(); // Prevent navigating to article
     try {
@@ -316,13 +311,13 @@ const ArticlesPage: React.FC = () => {
 
   return (
     <BackgroundWrapper>
-      <motion.div 
+      <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         className="min-h-screen py-16 px-4 sm:px-6 lg:px-16"
       >
         {/* Header Section */}
-        <motion.div 
+        <motion.div
           initial={{ y: -20, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
           transition={{ duration: 0.5 }}
@@ -340,7 +335,7 @@ const ArticlesPage: React.FC = () => {
         </motion.div>
 
         {/* Search and Filter Bar */}
-        <motion.div 
+        <motion.div
           initial={{ y: 20, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
           transition={{ duration: 0.6, delay: 0.2 }}
@@ -357,7 +352,7 @@ const ArticlesPage: React.FC = () => {
                 placeholder="Search articles by title, content, or author..."
               />
             </div>
-            <button 
+            <button
               onClick={toggleFilters}
               className="flex items-center justify-center h-12 w-12 rounded-xl bg-gray-800 hover:bg-gray-700 transition-colors duration-200 border border-gray-700 shadow-lg"
               aria-label="Filter articles"
@@ -376,7 +371,7 @@ const ArticlesPage: React.FC = () => {
         >
           <div className="flex justify-between items-center mb-8">
             <h3 className="text-lg font-bold text-white">Filters</h3>
-            <button 
+            <button
               onClick={toggleFilters}
               className="text-gray-400 hover:text-white"
             >
@@ -396,8 +391,8 @@ const ArticlesPage: React.FC = () => {
                   key={category}
                   onClick={() => handleCategoryChange(category)}
                   className={`block w-full text-left px-3 py-2 rounded-lg transition-colors duration-200 ${
-                    selectedCategory === category 
-                      ? 'bg-amber-500/20 text-amber-400' 
+                    selectedCategory === category
+                      ? 'bg-amber-500/20 text-amber-400'
                       : 'text-gray-300 hover:bg-gray-800'
                   }`}
                 >
@@ -453,17 +448,17 @@ const ArticlesPage: React.FC = () => {
 
         {/* Current Filters Display */}
         {(selectedCategory || selectedTag) && (
-          <motion.div 
+          <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             className="flex flex-wrap items-center gap-2 max-w-4xl mx-auto mb-6"
           >
             <span className="text-gray-400 text-sm">Active filters:</span>
-            
+
             {selectedCategory && (
               <span className="inline-flex items-center px-3 py-1 rounded-full bg-amber-500/20 text-amber-300 text-sm">
                 {selectedCategory}
-                <button 
+                <button
                   onClick={() => setSelectedCategory('')}
                   className="ml-2 text-amber-300 hover:text-amber-100"
                 >
@@ -471,13 +466,13 @@ const ArticlesPage: React.FC = () => {
                 </button>
               </span>
             )}
-            
+
             {selectedTag && (
-              <span 
+              <span
                 className="inline-flex items-center px-3 py-1 rounded-full bg-gray-800 text-gray-200 text-sm"
               >
                 {selectedTag}
-                <button 
+                <button
                   onClick={() => setSelectedTag('')}
                   className="ml-2 text-gray-400 hover:text-white"
                 >
@@ -485,8 +480,8 @@ const ArticlesPage: React.FC = () => {
                 </button>
               </span>
             )}
-            
-            <button 
+
+            <button
               onClick={clearFilters}
               className="text-amber-400 text-sm hover:text-amber-300 ml-2"
             >
@@ -508,7 +503,7 @@ const ArticlesPage: React.FC = () => {
         </motion.div>
 
         {/* Articles Grid */}
-        <motion.div 
+        <motion.div
           variants={{
             hidden: { opacity: 0 },
             show: {
@@ -523,7 +518,7 @@ const ArticlesPage: React.FC = () => {
           className="max-w-7xl mx-auto"
         >
           {error && (
-            <motion.div 
+            <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               className="text-center py-12"
@@ -535,7 +530,7 @@ const ArticlesPage: React.FC = () => {
               </div>
               <h3 className="text-xl font-medium text-white mb-2">Error Loading Articles</h3>
               <p className="text-gray-400">{error}</p>
-              <button 
+              <button
                 onClick={() => window.location.reload()}
                 className="mt-4 px-4 py-2 bg-amber-500 text-gray-900 rounded-lg hover:bg-amber-600 transition-colors duration-200"
               >
@@ -553,105 +548,20 @@ const ArticlesPage: React.FC = () => {
           ) : articles.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
               {articles.map((article) => (
-                <motion.article 
+                <ArticleCard
                   key={article.id}
-                  variants={{
-                    hidden: { opacity: 0, y: 20 },
-                    show: { opacity: 1, y: 0 }
-                  }}
-                  whileHover={{ y: -8, transition: { duration: 0.2 } }}
-                  className="flex flex-col rounded-xl overflow-hidden bg-gray-800/60 backdrop-blur-sm shadow-xl hover:shadow-2xl transition-all duration-300 cursor-pointer"
-                  onClick={() => navigateToArticle(article.slug)}
-                >
-                  {/* Article cover image */}
-                  <div className="relative h-48 overflow-hidden">
-                    <img 
-                      src={article.coverImageUrl} 
-                      alt={article.title}
-                      className="w-full h-full object-cover transition-transform duration-700 hover:scale-110"
-                    />
-                    <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-gray-900 to-transparent">
-                      <div className="flex justify-between items-center">
-                        <span className="text-xs font-medium px-2 py-1 rounded-full bg-amber-500/90 text-gray-900">
-                          {article.category}
-                        </span>
-                        <span className="flex items-center text-gray-300 text-xs">
-                          <Clock className="h-3 w-3 mr-1" />
-                          {article.meta.readTime} min read
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                  
-                  {/* Article content */}
-                  <div className="p-6 flex-1 flex flex-col">
-                    <h3 className="text-xl font-bold text-white mb-2 line-clamp-2">{article.title}</h3>
-                    <p className="text-gray-300 text-sm mb-4 line-clamp-3">{article.summary}</p>
-                    
-                    {/* Article meta */}
-                    <div className="mt-auto">
-                      <div className="flex items-center gap-4 mb-4">
-                        <button
-                          onClick={(e) => handleLikeToggle(article.id, e)}
-                          className={`flex items-center text-xs transition-colors ${
-                            likedArticles.has(article.id)
-                              ? 'text-red-500 hover:text-red-400'
-                              : 'text-gray-400 hover:text-red-500'
-                          }`}
-                          aria-label={likedArticles.has(article.id) ? 'Unlike article' : 'Like article'}
-                        >
-                          <Heart
-                            className="h-3 w-3 mr-1"
-                            fill={likedArticles.has(article.id) ? 'currentColor' : 'none'}
-                          />
-                          {article.meta.likes}
-                        </button>
-                        <button
-                          onClick={(e) => handleBookmarkToggle(article.id, e)}
-                          className={`flex items-center text-xs transition-colors ${
-                            bookmarkedArticles.has(article.id)
-                              ? 'text-amber-500 hover:text-amber-400'
-                              : 'text-gray-400 hover:text-amber-500'
-                          }`}
-                          aria-label={bookmarkedArticles.has(article.id) ? 'Remove bookmark' : 'Bookmark article'}
-                        >
-                          <Bookmark
-                            className="h-3 w-3 mr-1"
-                            fill={bookmarkedArticles.has(article.id) ? 'currentColor' : 'none'}
-                          />
-                          {article.meta.bookmarks}
-                        </button>
-                        <div className="flex items-center text-xs text-gray-400">
-                          <Eye className="h-3 w-3 mr-1 text-gray-500" />
-                          {article.meta.views}
-                        </div>
-                      </div>
-                      
-                      {/* Author and date */}
-                      <div className="flex items-center">
-                        {article.author.avatarUrl ? (
-                          <img 
-                            src={article.author.avatarUrl} 
-                            alt={article.author.name}
-                            className="h-8 w-8 rounded-full object-cover mr-3 border border-gray-700"
-                          />
-                        ) : (
-                          <div className="h-8 w-8 rounded-full bg-amber-500 text-gray-900 flex items-center justify-center mr-3 text-sm font-medium">
-                            {article.author.name.charAt(0)}
-                          </div>
-                        )}
-                        <div>
-                          <p className="text-sm font-medium text-white">{article.author.name}</p>
-                          <p className="text-xs text-gray-400">{formatDate(article.createdAt)}</p>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </motion.article>
+                  article={article}
+                  isLiked={likedArticles.has(article.id)}
+                  isBookmarked={bookmarkedArticles.has(article.id)}
+                  onLikeToggle={handleLikeToggle}
+                  onBookmarkToggle={handleBookmarkToggle}
+                  onNavigate={navigateToArticle}
+                  formatDate={formatDate}
+                />
               ))}
             </div>
           ) : (
-            <motion.div 
+            <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               className="text-center py-16"
@@ -665,7 +575,7 @@ const ArticlesPage: React.FC = () => {
               <p className="text-gray-400 max-w-md mx-auto mb-6">
                 We couldn't find any articles matching your search criteria. Try adjusting your filters or search terms.
               </p>
-              <button 
+              <button
                 onClick={clearFilters}
                 className="px-4 py-2 bg-amber-500 text-gray-900 rounded-lg hover:bg-amber-600 transition-colors duration-200"
               >
@@ -687,7 +597,7 @@ const ArticlesPage: React.FC = () => {
               <p className="text-sm text-gray-400">
                 Page {currentPage} of {totalPages}
               </p>
-              
+
               <div className="flex items-center gap-1">
                 <button
                   onClick={() => handlePageChange(1)}
@@ -701,7 +611,7 @@ const ArticlesPage: React.FC = () => {
                 >
                   <ChevronsLeft size={18} />
                 </button>
-                
+
                 <button
                   onClick={() => handlePageChange(currentPage - 1)}
                   disabled={currentPage === 1}
@@ -714,7 +624,7 @@ const ArticlesPage: React.FC = () => {
                 >
                   <ChevronLeft size={18} />
                 </button>
-                
+
                 <div className="flex items-center">
                   {getPageNumbers().map((page, index) => (
                     page < 0 ? (
@@ -734,7 +644,7 @@ const ArticlesPage: React.FC = () => {
                     )
                   ))}
                 </div>
-                
+
                 <button
                   onClick={() => handlePageChange(currentPage + 1)}
                   disabled={currentPage === totalPages}
@@ -747,7 +657,7 @@ const ArticlesPage: React.FC = () => {
                 >
                   <ChevronRight size={18} />
                 </button>
-                
+
                 <button
                   onClick={() => handlePageChange(totalPages)}
                   disabled={currentPage === totalPages}
