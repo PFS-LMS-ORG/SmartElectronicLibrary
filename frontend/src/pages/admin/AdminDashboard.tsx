@@ -6,20 +6,14 @@ import {
   Users,
   Library,
   MoreHorizontal,
-  TrendingDown,
   TrendingUp,
-  Search,
   Plus,
   UserCheck,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { Link } from "react-router-dom";
+import axios from "axios";
 
-// Define types based on your models
-type Author = {
-  id: number;
-  name: string;
-};
 
 type Book = {
   id: number;
@@ -165,50 +159,52 @@ const AdminDashboard = () => {
 
   // Fetch the number of users
   useEffect(() => {
-    const fetchUsers = async () => {
-      try {
-        const response = await fetch("/api/users");
-        if (!response.ok)
-          throw new Error(`HTTP error! Status: ${response.status}`);
-        const result = await response.json();
-        setStats((prev) => ({
-          ...prev,
-          totalUsers: result.length,
-        }));
-      } catch (error) {
-        console.error("Error fetching users:", error);
-        setErrorRentals(
-          error instanceof Error ? error.message : "An unknown error occurred"
-        );
-      }
-    };
-    fetchUsers();
+      const fetchUsers = async () => {
+          try {
+              const token = localStorage.getItem('token');
+              if (!token) throw new Error('No authentication token found');
+              const response = await axios.get('/api/users', {
+                  headers: {
+                      Authorization: `Bearer ${token}`,
+                      'Content-Type': 'application/json',
+                  },
+              });
+              setStats((prev) => ({
+                  ...prev,
+                  totalUsers: response.data.length,
+              }));
+          } catch (error) {
+              console.error('Error fetching users:', error);
+              setErrorRentals(
+                  error instanceof Error ? error.message : 'An unknown error occurred'
+              );
+          }
+      };
+      fetchUsers();
   }, []);
 
   // Fetch borrow requests
   useEffect(() => {
     const fetchBorrowRequests = async () => {
-      try {
-        setLoadingBorrowRequests(true);
-        const token = localStorage.getItem("token");
-        const response = await fetch("/api/rental_requests/pending", {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-          },
-        });
-        if (!response.ok)
-          throw new Error(`HTTP error! Status: ${response.status}`);
-        const result = await response.json();
-        setBorrowRequests(result.requests || []);
-      } catch (error) {
-        console.error("Error fetching borrow requests:", error);
-        setErrorBorrowRequests(
-          error instanceof Error ? error.message : "An unknown error occurred"
-        );
-      } finally {
-        setLoadingBorrowRequests(false);
-      }
+        try {
+            setLoadingBorrowRequests(true);
+            const token = localStorage.getItem('token');
+            if (!token) throw new Error('No authentication token found');
+            const response = await axios.get('/api/rental_requests/pending', {
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                    'Content-Type': 'application/json',
+                },
+            });
+            setBorrowRequests(response.data.requests || []);
+        } catch (error) {
+            console.error('Error fetching borrow requests:', error);
+            setErrorBorrowRequests(
+                error instanceof Error ? error.message : 'An unknown error occurred'
+            );
+        } finally {
+            setLoadingBorrowRequests(false);
+        }
     };
     fetchBorrowRequests();
   }, []);
@@ -216,26 +212,29 @@ const AdminDashboard = () => {
   // Fetch rentals
   useEffect(() => {
     const fetchRentals = async () => {
-      try {
-        setLoadingRentals(true);
-        const response = await fetch("/api/rentals");
-        if (!response.ok)
-          throw new Error(`HTTP error! Status: ${response.status}`);
-        const result = await response.json();
-        setRentals(result);
-        setStats((prev) => ({
-          ...prev,
-          borrowedBooks: result.filter((rental: Rental) => !rental.returned_at)
-            .length,
-        }));
-      } catch (error) {
-        console.error("Error fetching rentals:", error);
-        setErrorRentals(
-          error instanceof Error ? error.message : "An unknown error occurred"
-        );
-      } finally {
-        setLoadingRentals(false);
-      }
+        try {
+            setLoadingRentals(true);
+            const token = localStorage.getItem('token');
+            if (!token) throw new Error('No authentication token found');
+            const response = await axios.get('/api/rentals', {
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                    'Content-Type': 'application/json',
+                },
+            });
+            setRentals(response.data.rentals);
+            setStats((prev) => ({
+                ...prev,
+                borrowedBooks: response.data.rentals.filter((rental: Rental) => !rental.returned_at).length,
+            }));
+        } catch (error) {
+            console.error('Error fetching rentals:', error);
+            setErrorRentals(
+                error instanceof Error ? error.message : 'An unknown error occurred'
+            );
+        } finally {
+            setLoadingRentals(false);
+        }
     };
     fetchRentals();
   }, []);
@@ -243,34 +242,33 @@ const AdminDashboard = () => {
   // Fetch books
   useEffect(() => {
     const fetchBooks = async () => {
-      try {
-        setLoadingBooks(true);
-        const token = localStorage.getItem("token");
-        const response = await fetch("/api/books", {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-          },
-        });
-        if (!response.ok)
-          throw new Error(`HTTP error! Status: ${response.status}`);
-        const result = await response.json();
-        if (!result.books || !Array.isArray(result.books))
-          throw new Error("Invalid response format");
-        setBooks(result.books);
-        setStats((prev) => ({
-          ...prev,
-          totalBooks: result.total_count || result.books.length,
-        }));
-      } catch (error) {
-        console.error("Error fetching books:", error);
-        setErrorBooks(
-          error instanceof Error ? error.message : "An unknown error occurred"
-        );
-        setBooks([]);
-      } finally {
-        setLoadingBooks(false);
-      }
+        try {
+            setLoadingBooks(true);
+            const token = localStorage.getItem('token');
+            if (!token) throw new Error('No authentication token found');
+            const response = await axios.get('/api/books', {
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                    'Content-Type': 'application/json',
+                },
+            });
+            if (!response.data.books || !Array.isArray(response.data.books)) {
+                throw new Error('Invalid response format');
+            }
+            setBooks(response.data.books);
+            setStats((prev) => ({
+                ...prev,
+                totalBooks: response.data.total_count || response.data.books.length,
+            }));
+        } catch (error) {
+            console.error('Error fetching books:', error);
+            setErrorBooks(
+                error instanceof Error ? error.message : 'An unknown error occurred'
+            );
+            setBooks([]);
+        } finally {
+            setLoadingBooks(false);
+        }
     };
     fetchBooks();
   }, []);
@@ -278,28 +276,25 @@ const AdminDashboard = () => {
   // Fetch account requests
   useEffect(() => {
     const fetchAccountRequests = async () => {
-      try {
-        setLoadingAccountRequests(true);
-        const token = localStorage.getItem("token");
-        if (!token) throw new Error("No authentication token found");
-        const response = await fetch("/api/admin/account-requests", {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-          },
-        });
-        if (!response.ok)
-          throw new Error(`HTTP error! Status: ${response.status}`);
-        const result = await response.json();
-        setAccountRequests(result); // Assuming the response is an array of User-like objects
-      } catch (error) {
-        console.error("Error fetching account requests:", error);
-        setErrorAccountRequests(
-          error instanceof Error ? error.message : "An unknown error occurred"
-        );
-      } finally {
-        setLoadingAccountRequests(false);
-      }
+        try {
+            setLoadingAccountRequests(true);
+            const token = localStorage.getItem('token');
+            if (!token) throw new Error('No authentication token found');
+            const response = await axios.get('/api/admin/account-requests', {
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                    'Content-Type': 'application/json',
+                },
+            });
+            setAccountRequests(response.data.requests || []);
+        } catch (error) {
+            console.error('Error fetching account requests:', error);
+            setErrorAccountRequests(
+                error instanceof Error ? error.message : 'An unknown error occurred'
+            );
+        } finally {
+            setLoadingAccountRequests(false);
+        }
     };
     fetchAccountRequests();
   }, []);
@@ -413,13 +408,13 @@ const AdminDashboard = () => {
         <div className="mb-8">
           <div className="flex justify-between items-center mb-5">
             <h2 className="text-xl font-bold text-gray-200">Borrow Requests</h2>
-            <a
-              href="/admin/requests"
+            <Link
+              to="/admin/requests"
               className="flex items-center text-indigo-400 text-sm font-medium hover:text-indigo-300 transition-colors"
             >
               View all
               <ChevronRight size={16} className="ml-1" />
-            </a>
+            </Link>
           </div>
 
           <div className="bg-gray-800 rounded-xl shadow-sm overflow-hidden border border-gray-700">
@@ -490,6 +485,87 @@ const AdminDashboard = () => {
           </div>
         </div>
 
+        {/* Recent Rentals */}
+        <div className="mb-8">
+          <div className="flex justify-between items-center mb-5">
+            <h2 className="text-xl font-bold text-gray-200">Recent Rentals</h2>
+            <Link
+              to="/admin/rentals"
+              className="flex items-center text-indigo-400 text-sm font-medium hover:text-indigo-300 transition-colors"
+            >
+              View all
+              <ChevronRight size={16} className="ml-1" />
+            </Link>
+          </div>
+
+          <div className="bg-gray-800 rounded-xl shadow-sm overflow-hidden border border-gray-700">
+            {loadingRentals ? (
+              <div className="p-8 flex justify-center">
+                <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-indigo-400"></div>
+              </div>
+            ) : errorRentals ? (
+              <div className="text-center py-8">
+                <div className="text-red-400 mb-2">⚠️</div>
+                <div className="text-gray-300">Error: {errorRentals}</div>
+              </div>
+            ) : rentals.length > 0 ? (
+              <div className="divide-y divide-gray-700">
+                {rentals
+                  .filter((rental) => !rental.returned_at) // Show only active rentals
+                  .sort(
+                    (a, b) =>
+                      new Date(b.rented_at).getTime() - new Date(a.rented_at).getTime()
+                  ) // Sort by most recent
+                  .slice(0, 6) // Limit to 6 rentals
+                  .map((rental) => (
+                    <div
+                      key={rental.id}
+                      className="p-5 flex items-center justify-between group hover:bg-gray-750 transition-colors"
+                    >
+                      <div className="flex items-center space-x-4">
+                        <BookCover book={rental.book} />
+                        <div>
+                          <h3 className="font-semibold text-gray-100">
+                            {rental.book?.title || "Untitled Book"}
+                          </h3>
+                          <p className="text-sm text-gray-400">
+                            By{" "}
+                            {rental.book?.authors?.join(", ") || "Unknown Author"} •
+                            {rental.book?.categories?.join(", ") || "Uncategorized"}
+                          </p>
+                          <div className="flex items-center mt-2">
+                            <UserAvatar user={rental.user} />
+                            <div className="ml-2">
+                              <p className="text-sm font-medium text-gray-300">
+                                {rental.user?.name || "Unknown User"}
+                              </p>
+                              <p className="text-xs text-gray-400">
+                                Rented on {formatDate(rental.rented_at)}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      <button className="p-2 rounded-full text-gray-400 hover:bg-gray-700 transition-colors">
+                        <MoreHorizontal size={18} />
+                      </button>
+                    </div>
+                  ))}
+              </div>
+            ) : (
+              <div className="text-center py-12">
+                <div className="mb-3 bg-gray-700 rounded-full p-3 inline-flex">
+                  <Book size={24} className="text-gray-400" />
+                </div>
+                <h3 className="text-lg font-medium text-gray-200 mb-1">
+                  No active rentals
+                </h3>
+                <p className="text-gray-400">No books are currently rented.</p>
+              </div>
+            )}
+          </div>
+        </div>
+
         {/* Two Column Layout for Recently Added Books and Account Requests */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           {/* Recently Added Books */}
@@ -498,13 +574,13 @@ const AdminDashboard = () => {
               <h2 className="text-xl font-bold text-gray-200">
                 Recently Added Books
               </h2>
-              <a
-                href="/admin/books"
+              <Link
+                to="/admin/books"
                 className="flex items-center text-indigo-400 text-sm font-medium hover:text-indigo-300 transition-colors"
               >
                 View all
                 <ChevronRight size={16} className="ml-1" />
-              </a>
+              </Link>
             </div>
 
             <div className="bg-gray-800 rounded-xl shadow-sm border border-gray-700 p-5">
@@ -587,13 +663,13 @@ const AdminDashboard = () => {
               <h2 className="text-xl font-bold text-gray-200">
                 Account Requests
               </h2>
-              <a
-                href="/admin/account-requests"
+              <Link
+                to="/admin/account-requests"
                 className="flex items-center text-indigo-400 text-sm font-medium hover:text-indigo-300 transition-colors"
               >
                 View all
                 <ChevronRight size={16} className="ml-1" />
-              </a>
+              </Link>
             </div>
 
             <div className="bg-gray-800 rounded-xl shadow-sm border border-gray-700 p-5">
