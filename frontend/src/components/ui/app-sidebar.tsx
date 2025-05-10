@@ -9,6 +9,7 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
+import { Link } from "react-router-dom";
 
 // Define menu items
 const menuItems = [
@@ -70,8 +71,8 @@ export function AppSidebar({ isCollapsed, setIsCollapsed }: { isCollapsed: boole
                 
               return (
                 <li key={item.title}>
-                  <a 
-                    href={item.url}
+                  <Link
+                    to={item.url}
                     className={`
                       flex items-center gap-3 px-3 py-2 rounded-md text-sm
                       ${isActive 
@@ -83,7 +84,7 @@ export function AppSidebar({ isCollapsed, setIsCollapsed }: { isCollapsed: boole
                   >
                     <item.icon className="h-4 w-4" />
                     {!isCollapsed && <span className="truncate">{item.title}</span>}
-                  </a>
+                  </Link>
                 </li>
               );
             })}
