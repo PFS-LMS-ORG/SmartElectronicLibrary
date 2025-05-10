@@ -1,7 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import Layout from '@/components/layout/layout';
 import { format } from 'date-fns';
+import { 
+  Search, ChevronDown, Eye, 
+  Filter, X, Download, RefreshCw,
+  Clock, Check, X as XIcon
+} from 'lucide-react';
+import Pagination  from '@/components/common/Pagination';
+import axios from 'axios';
+import { toast } from 'react-toastify';
 
 interface RentalRequest {
   id: number;
@@ -30,127 +38,121 @@ interface RequestsResponse {
 }
 
 const AdminRequestsPage: React.FC = () => {
-  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  
   const [requests, setRequests] = useState<RentalRequest[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
-  const [page, setPage] = useState<number>(1);
-  const [perPage] = useState<number>(10);
+  const [page, setPage] = useState<number>(parseInt(searchParams.get('page') || '1', 10));
+  const [perPage, setPerPage] = useState<number>(parseInt(searchParams.get('per_page') || '10', 10));
   const [totalPages, setTotalPages] = useState<number>(1);
-  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [totalRequests, setTotalRequests] = useState<number>(0);
+  const [statusFilter, setStatusFilter] = useState<string>(searchParams.get('status') || 'all');
   const [actionLoading, setActionLoading] = useState<{ [key: number]: boolean }>({});
-  const [searchQuery, setSearchQuery] = useState<string>('');
-  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'warning' } | null>(null);
+  const [searchQuery, setSearchQuery] = useState<string>(searchParams.get('search') || '');
   const [viewRequest, setViewRequest] = useState<RentalRequest | null>(null);
+
+  // Update URL when parameters change
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (searchQuery) params.set('search', searchQuery);
+    if (page !== 1) params.set('page', page.toString());
+    if (perPage !== 10) params.set('per_page', perPage.toString());
+    if (statusFilter !== 'all') params.set('status', statusFilter);
+    setSearchParams(params);
+  }, [page, perPage, statusFilter, searchQuery, setSearchParams]);
 
   // Fetch rental requests
   const fetchRequests = async () => {
     try {
-      setLoading(true);
-      setError(null);
+        setLoading(true);
+        setError(null);
 
-      const token = localStorage.getItem('token');
-      if (!token) {
-        throw new Error('No authentication token found');
-      }
-
-      const params = new URLSearchParams({
-        page: page.toString(),
-        per_page: perPage.toString(),
-      });
-      if (statusFilter !== 'all') {
-        params.append('status', statusFilter);
-      }
-      if (searchQuery) {
-        params.append('search', searchQuery);
-      }
-
-      const response = await fetch(`/api/rental_requests?${params.toString()}`, {
-        method: 'GET',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-      });
-
-      if (!response.ok) {
-        if (response.status === 403) {
-          throw new Error('Forbidden: Admin access required');
+        const token = localStorage.getItem('token');
+        if (!token) {
+            throw new Error('No authentication token found');
         }
-        if (response.status === 401) {
-          throw new Error('Unauthorized: Please log in again');
+
+        const params = new URLSearchParams({
+            page: page.toString(),
+            per_page: perPage.toString(),
+        });
+        if (statusFilter !== 'all') {
+            params.append('status', statusFilter);
         }
-        throw new Error(`HTTP error! Status: ${response.status}`);
-      }
+        if (searchQuery) {
+            params.append('search', searchQuery);
+        }
 
-      const data: RequestsResponse = await response.json();
-      if (!data.requests || !Array.isArray(data.requests)) {
-        throw new Error('Invalid response format');
-      }
+        const response = await axios.get(`/api/rental_requests?${params.toString()}`, {
+            headers: {
+                Authorization: `Bearer ${token}`,
+                'Content-Type': 'application/json',
+            },
+        });
 
-      setRequests(data.requests);
-      setTotalPages(data.total_pages || 1);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to fetch rental requests');
-      console.error('Error fetching requests:', err);
-      setRequests([]);
+        if (!response.data.requests || !Array.isArray(response.data.requests)) {
+            throw new Error('Invalid response format');
+        }
+
+        setRequests(response.data.requests);
+        setTotalRequests(response.data.total_count || 0);
+        setTotalPages(response.data.total_pages || 1);
+    } catch (err: any) {
+        const errorMessage = err instanceof Error ? err.message : 'Failed to fetch rental requests';
+        setError(errorMessage);
+        console.error('Error fetching requests:', {
+            message: err.message,
+            response: err.response?.data,
+            status: err.response?.status,
+        });
+        setRequests([]);
+        setTotalRequests(0);
+        setTotalPages(1);
     } finally {
-      setLoading(false);
+        setLoading(false);
     }
   };
 
   // Handle approve/reject actions
   const handleAction = async (requestId: number, action: 'approve' | 'reject') => {
     if (!window.confirm(`Are you sure you want to ${action} this rental request?`)) {
-      return;
+        return;
     }
 
     try {
-      setActionLoading((prev) => ({ ...prev, [requestId]: true }));
-      setError(null);
+        setActionLoading((prev) => ({ ...prev, [requestId]: true }));
+        setError(null);
 
-      const token = localStorage.getItem('token');
-      if (!token) {
-        throw new Error('No authentication token found');
-      }
-
-      const response = await fetch(`/api/rental_requests/${requestId}/${action}`, {
-        method: 'PUT',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-      });
-
-      if (!response.ok) {
-        if (response.status === 403) {
-          throw new Error('Forbidden: Admin access required');
+        const token = localStorage.getItem('token');
+        if (!token) {
+            throw new Error('No authentication token found');
         }
-        if (response.status === 400) {
-          const data = await response.json();
-          throw new Error(data.error || `Failed to ${action} request`);
-        }
-        throw new Error(`HTTP error! Status: ${response.status}`);
-      }
 
-      setRequests((prev) =>
-        prev.map((req) =>
-          req.id === requestId ? { ...req, status: action === 'approve' ? 'approved' : 'rejected' } : req
-        )
-      );
-      setToast({ 
-        message: `Request ${action === 'approve' ? 'approved' : 'rejected'} successfully. Email notification sent.`,
-        type: 'success' 
-      });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : `Failed to ${action} request`);
-      setToast({ 
-        message: err instanceof Error ? err.message : `Failed to ${action} request. Email not sent.`,
-        type: 'error' 
-      });
-      console.error(`Error ${action}ing request:`, err);
+        const response = await axios.put(`/api/rental_requests/${requestId}/${action}`, {}, {
+            headers: {
+                Authorization: `Bearer ${token}`,
+                'Content-Type': 'application/json',
+            },
+        });
+
+        setRequests((prev) =>
+            prev.map((req) =>
+                req.id === requestId ? { ...req, status: action === 'approve' ? 'approved' : 'rejected' } : req
+            )
+        );
+        toast.success(`Request ${action === 'approve' ? 'approved' : 'rejected'} successfully. Email notification sent.`);
+    } catch (err: any) {
+        const errorMessage = err instanceof Error ? err.message : `Failed to ${action} request`;
+        setError(errorMessage);
+        toast.error(errorMessage);
+        console.error(`Error ${action}ing request:`, {
+            message: err.message,
+            response: err.response?.data,
+            status: err.response?.status,
+        });
     } finally {
-      setActionLoading((prev) => ({ ...prev, [requestId]: false }));
+        setActionLoading((prev) => ({ ...prev, [requestId]: false }));
     }
   };
 
@@ -182,17 +184,45 @@ const AdminRequestsPage: React.FC = () => {
     URL.revokeObjectURL(url);
   };
 
-  // Fetch on mount and when page/status changes
+  // Fetch when parameters change
   useEffect(() => {
     fetchRequests();
-  }, [page, statusFilter, searchQuery]);
+  }, [page, perPage, statusFilter, searchQuery]);
+
+  // Handle search submission
+  const handleSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    setPage(1); // Reset to first page on new search
+    fetchRequests();
+  };
 
   // Handle pagination
   const handlePageChange = (newPage: number) => {
-    if (newPage >= 1 && newPage <= totalPages) {
-      setPage(newPage);
-    }
+    const page = Math.max(1, Math.min(newPage, totalPages));
+    setPage(page);
   };
+
+  // Handle per page change
+  const handlePerPageChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const newPerPage = parseInt(e.target.value, 10);
+    setPerPage(newPerPage);
+    setPage(1); // Reset to first page when items per page changes
+  };
+
+  // Handle status filter change
+  const handleStatusFilterChange = (status: string) => {
+    setStatusFilter(status);
+    setPage(1); // Reset to first page when filter changes
+  };
+
+  // Clear filters
+  const clearFilters = () => {
+    setSearchQuery('');
+    setStatusFilter('all');
+    setPage(1);
+    fetchRequests();
+  };
+
 
   // Get cover color for fallback
   const getCoverColor = (title: string = '') => {
@@ -201,19 +231,13 @@ const AdminRequestsPage: React.FC = () => {
     return colors[index];
   };
 
-  // Clear toast after 3s
-  useEffect(() => {
-    if (toast) {
-      const timer = setTimeout(() => setToast(null), 3000);
-      return () => clearTimeout(timer);
-    }
-  }, [toast]);
 
   return (
     <Layout>
       <div className="min-h-screen bg-gray-900 text-gray-100">
         <div className="container mx-auto px-4 py-6">
           <div className="bg-gray-800 rounded-lg shadow-xl p-6 border border-gray-700">
+            {/* Header */}
             <div className="flex justify-between items-center mb-6">
               <h1 className="text-2xl font-semibold text-gray-100 flex items-center">
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 mr-2 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -221,41 +245,109 @@ const AdminRequestsPage: React.FC = () => {
                 </svg>
                 Rental Requests
               </h1>
-              <div className="flex gap-4">
-                <div className="relative">
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={fetchRequests}
+                  className="px-3 py-1.5 text-sm rounded-lg flex items-center bg-gray-700 text-gray-300 hover:bg-gray-600 transition-colors"
+                  title="Refresh requests"
+                >
+                  <RefreshCw size={14} className="mr-1" /> Refresh
+                </button>
+                <button
+                  onClick={exportToCSV}
+                  className="px-3 py-1.5 text-sm rounded-lg flex items-center bg-indigo-600/80 text-white hover:bg-indigo-700 transition-colors"
+                >
+                  <Download size={14} className="mr-1" /> Export CSV
+                </button>
+              </div>
+            </div>
+
+            {/* Search and Filter Area */}
+            <div className="flex flex-col md:flex-row gap-4 mb-6">
+              {/* Search Form */}
+              <div className="md:flex-grow">
+                <form onSubmit={handleSearch} className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <Search size={16} className="text-gray-400" />
+                  </div>
                   <input
                     type="text"
+                    className="w-full pl-10 pr-4 py-2 border border-gray-600 rounded-lg bg-gray-700 text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                    placeholder="Search by user or book..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Search by user or book..."
-                    className="px-3 py-2 bg-gray-700 border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm text-gray-100 placeholder-gray-400 w-64"
                   />
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 absolute right-3 top-2 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                  </svg>
+                  <button
+                    type="submit"
+                    className="absolute right-2 top-1/2 transform -translate-y-1/2 p-1.5 rounded-md bg-indigo-600 text-indigo-100 hover:bg-indigo-700 transition-colors"
+                  >
+                    <Search size={16} />
+                  </button>
+                </form>
+              </div>
+
+              {/* Status Filter */}
+              <div className="relative w-full md:w-64">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <Filter size={16} className="text-gray-400" />
                 </div>
                 <select
                   value={statusFilter}
-                  onChange={(e) => setStatusFilter(e.target.value)}
-                  className="px-3 py-2 bg-gray-700 border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm text-gray-100"
+                  onChange={(e) => handleStatusFilterChange(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2 border border-gray-600 rounded-lg bg-gray-700 text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 appearance-none"
+                  style={{ backgroundImage: "none" }} // Remove default arrow
                 >
                   <option value="all">All Statuses</option>
                   <option value="pending">Pending</option>
                   <option value="approved">Approved</option>
                   <option value="rejected">Rejected</option>
                 </select>
-                <button
-                  onClick={exportToCSV}
-                  className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-all duration-200 text-sm flex items-center"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                  </svg>
-                  Export CSV
-                </button>
+                <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                  <ChevronDown size={16} className="text-gray-400" />
+                </div>
               </div>
             </div>
+            
+            {/* Active filters display */}
+            {(searchQuery || statusFilter !== 'all') && (
+              <div className="flex items-center flex-wrap gap-2 mb-4">
+                <span className="text-xs text-gray-400">Active filters:</span>
+                {searchQuery && (
+                  <span className="inline-flex items-center px-2 py-1 bg-indigo-900/30 text-indigo-300 text-xs rounded border border-indigo-700">
+                    Search: {searchQuery}
+                    <button 
+                      onClick={() => { setSearchQuery(''); setPage(1); }}
+                      className="ml-1.5 hover:text-white"
+                    >
+                      <X size={12} />
+                    </button>
+                  </span>
+                )}
+                {statusFilter !== 'all' && (
+                  <span className={`inline-flex items-center px-2 py-1 text-xs rounded border ${
+                    statusFilter === 'pending' ? 'bg-yellow-900/30 text-yellow-300 border-yellow-700' :
+                    statusFilter === 'approved' ? 'bg-green-900/30 text-green-300 border-green-700' :
+                    'bg-red-900/30 text-red-300 border-red-700'
+                  }`}>
+                    Status: {statusFilter.charAt(0).toUpperCase() + statusFilter.slice(1)}
+                    <button 
+                      onClick={() => { setStatusFilter('all'); setPage(1); }}
+                      className="ml-1.5 hover:text-white"
+                    >
+                      <X size={12} />
+                    </button>
+                  </span>
+                )}
+                <button
+                  onClick={clearFilters}
+                  className="text-xs text-gray-400 hover:text-gray-300 ml-2"
+                >
+                  Clear all
+                </button>
+              </div>
+            )}
 
+            {/* Error message */}
             {error && (
               <div className="bg-red-900/50 border border-red-800 text-red-200 px-4 py-3 rounded mb-4 flex items-center">
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -265,31 +357,7 @@ const AdminRequestsPage: React.FC = () => {
               </div>
             )}
 
-            {toast && (
-              <div className={`fixed top-4 right-4 p-4 rounded shadow-lg z-50 flex items-center ${
-                toast.type === 'success' ? 'bg-green-900/80 text-green-200 border border-green-700' : 
-                toast.type === 'error' ? 'bg-red-900/80 text-red-200 border border-red-700' : 
-                'bg-yellow-900/80 text-yellow-200 border border-yellow-700'
-              }`}>
-                {toast.type === 'success' && (
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                  </svg>
-                )}
-                {toast.type === 'error' && (
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                )}
-                {toast.type === 'warning' && (
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2 text-yellow-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                  </svg>
-                )}
-                {toast.message}
-              </div>
-            )}
-
+            {/* Table */}
             {loading ? (
               <div className="flex justify-center items-center h-40">
                 <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-indigo-500"></div>
@@ -319,6 +387,11 @@ const AdminRequestsPage: React.FC = () => {
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
                               </svg>
                               <p>No rental requests found</p>
+                              <p className="text-sm text-gray-500 mt-1">
+                                {searchQuery || statusFilter !== 'all'
+                                  ? 'Try different search criteria or clear filters'
+                                  : 'No requests have been made yet'}
+                              </p>
                             </div>
                           </td>
                         </tr>
@@ -397,23 +470,11 @@ const AdminRequestsPage: React.FC = () => {
                                 }`}
                               >
                                 {request.status === 'pending' ? (
-                                  <>
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                    </svg>
-                                  </>
+                                  <Clock size={12} className="mr-1" />
                                 ) : request.status === 'approved' ? (
-                                  <>
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                                    </svg>
-                                  </>
+                                  <Check size={12} className="mr-1" />
                                 ) : (
-                                  <>
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                    </svg>
-                                  </>
+                                  <XIcon size={12} className="mr-1" />
                                 )}
                                 {request.status.charAt(0).toUpperCase() + request.status.slice(1)}
                               </span>
@@ -425,10 +486,7 @@ const AdminRequestsPage: React.FC = () => {
                                   className="p-1.5 bg-gray-700 text-gray-300 rounded hover:bg-gray-600 hover:text-white transition-all duration-200 border border-gray-600"
                                   title="View Details"
                                 >
-                                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                                  </svg>
+                                  <Eye size={14} />
                                 </button>
                                 
                                 {request.status === 'pending' && (
@@ -445,9 +503,7 @@ const AdminRequestsPage: React.FC = () => {
                                           <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
                                         </svg>
                                       ) : (
-                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                                        </svg>
+                                        <Check size={14} />
                                       )}
                                     </button>
                                     <button
@@ -462,9 +518,7 @@ const AdminRequestsPage: React.FC = () => {
                                           <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
                                         </svg>
                                       ) : (
-                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                        </svg>
+                                        <XIcon size={14} />
                                       )}
                                     </button>
                                   </>
@@ -478,38 +532,19 @@ const AdminRequestsPage: React.FC = () => {
                   </table>
                 </div>
 
-                {/* Pagination */}
-                {totalPages > 1 && (
-                  <div className="flex justify-between items-center mt-6">
-                    <button
-                      onClick={() => handlePageChange(page - 1)}
-                      disabled={page === 1}
-                      className="px-4 py-2 bg-gray-800 text-gray-300 rounded-md hover:bg-gray-700 disabled:bg-gray-900 disabled:text-gray-600 disabled:cursor-not-allowed border border-gray-700 transition-colors duration-200"
-                    >
-                      <div className="flex items-center">
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                        </svg>
-                        Previous
-                      </div>
-                    </button>
-                    <span className="text-sm text-gray-400 bg-gray-800 px-4 py-2 rounded-md border border-gray-700">
-                      Page {page} of {totalPages}
-                    </span>
-                    <button
-                      onClick={() => handlePageChange(page + 1)}
-                      disabled={page === totalPages}
-                      className="px-4 py-2 bg-gray-800 text-gray-300 rounded-md hover:bg-gray-700 disabled:bg-gray-900 disabled:text-gray-600 disabled:cursor-not-allowed border border-gray-700 transition-colors duration-200"
-                    >
-                      <div className="flex items-center">
-                        Next
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 ml-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                        </svg>
-                      </div>
-                    </button>
-                  </div>
-                )}
+                {/* Enhanced pagination */}
+                <Pagination
+                  currentPage={page}
+                  totalPages={totalPages}
+                  onPageChange={handlePageChange}
+                  onPerPageChange={handlePerPageChange}
+                  totalItems={totalRequests}
+                  perPage={perPage}
+                  itemsPerPageOptions={[5, 10, 20, 50]}
+                  itemLabel="rental request"
+                  colorScheme="purple"
+                />
+
               </>
             )}
           </div>
@@ -628,9 +663,7 @@ const AdminRequestsPage: React.FC = () => {
                         }}
                         className="px-4 py-2 bg-emerald-700 text-white rounded-md hover:bg-emerald-600 transition-colors duration-200 border border-emerald-600 flex items-center"
                       >
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                        </svg>
+                        <Check size={14} className="mr-1" />
                         Approve
                       </button>
                       <button
@@ -640,9 +673,7 @@ const AdminRequestsPage: React.FC = () => {
                         }}
                         className="px-4 py-2 bg-red-700 text-white rounded-md hover:bg-red-600 transition-colors duration-200 border border-red-600 flex items-center"
                       >
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                        </svg>
+                        <XIcon size={14} className="mr-1" />
                         Reject
                       </button>
                     </div>
