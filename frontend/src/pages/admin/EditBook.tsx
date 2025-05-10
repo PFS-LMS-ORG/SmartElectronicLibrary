@@ -5,6 +5,7 @@ import {
   Book, ChevronLeft, Save, X, Image, Star, Bookmark, 
   FileText, Users, Tag, Repeat, Hash, Check, AlertTriangle 
 } from 'lucide-react';
+import axios from 'axios';
 
 interface Book {
   id: number;
@@ -46,49 +47,46 @@ const EditBookPage: React.FC = () => {
   // Fetch book data
   useEffect(() => {
     const fetchBook = async () => {
-      try {
-        setLoading(true);
-        setError(null);
+        try {
+            setLoading(true);
+            setError(null);
 
-        const token = localStorage.getItem('token');
-        if (!token) {
-          throw new Error('No authentication token found');
+            const token = localStorage.getItem('token');
+            if (!token) {
+                throw new Error('No authentication token found');
+            }
+
+            const response = await axios.get(`/api/books/${id}`, {
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                    'Content-Type': 'application/json',
+                },
+            });
+
+            setBook(response.data);
+            setFormData({
+                title: response.data.title,
+                cover_url: response.data.cover_url,
+                description: response.data.description,
+                rating: response.data.rating,
+                summary: response.data.summary,
+                authors: response.data.authors,
+                categories: response.data.categories,
+                borrow_count: response.data.borrow_count,
+                total_books: response.data.total_books,
+                available_books: response.data.available_books,
+                featured_book: response.data.featured_book,
+            });
+        } catch (err: any) {
+            setError(err instanceof Error ? err.message : 'Failed to fetch book');
+            console.error('Error fetching book:', {
+                message: err.message,
+                response: err.response?.data,
+                status: err.response?.status,
+            });
+        } finally {
+            setLoading(false);
         }
-
-        const response = await fetch(`/api/books/${id}`, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-        });
-
-        if (!response.ok) {
-          if (response.status === 404) throw new Error('Book not found');
-          if (response.status === 401) throw new Error('Unauthorized: Please log in again');
-          throw new Error(`HTTP error! Status: ${response.status}`);
-        }
-
-        const data = await response.json();
-        setBook(data);
-        setFormData({
-          title: data.title,
-          cover_url: data.cover_url,
-          description: data.description,
-          rating: data.rating,
-          summary: data.summary,
-          authors: data.authors,
-          categories: data.categories,
-          borrow_count: data.borrow_count,
-          total_books: data.total_books,
-          available_books: data.available_books,
-          featured_book: data.featured_book,
-        });
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to fetch book');
-        console.error('Error fetching book:', err);
-      } finally {
-        setLoading(false);
-      }
     };
 
     fetchBook();
@@ -123,41 +121,36 @@ const EditBookPage: React.FC = () => {
     setSuccessMessage(null);
 
     try {
-      const token = localStorage.getItem('token');
-      if (!token) {
-        throw new Error('No authentication token found');
-      }
-
-      const response = await fetch(`/api/books/${id}`, {
-        method: 'PUT',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(formData),
-      });
-
-      if (!response.ok) {
-        if (response.status === 403) throw new Error('Forbidden: Admin access required');
-        if (response.status === 404) throw new Error('Book not found');
-        if (response.status === 400) {
-          const data = await response.json();
-          throw new Error(data.error || 'Invalid data provided');
+        const token = localStorage.getItem('token');
+        if (!token) {
+            throw new Error('No authentication token found');
         }
-        throw new Error(`HTTP error! Status: ${response.status}`);
-      }
 
-      setSuccessMessage('Book updated successfully');
-      
-      // Optional: Navigate back after a delay
-      setTimeout(() => {
-        navigate('/admin/books');
-      }, 2000);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to update book');
-      console.error('Error updating book:', err);
+        const response = await axios.put(`/api/books/${id}`, formData, {
+            headers: {
+                Authorization: `Bearer ${token}`,
+                'Content-Type': 'application/json',
+            },
+        });
+
+        if (response.status !== 200) {
+            setError('Failed to update book');
+            throw new Error('Failed to update book');
+        }
+
+        setSuccessMessage('Book updated successfully');
+        setTimeout(() => {
+            navigate('/admin/books');
+        }, 2000);
+    } catch (err: any) {
+        setError(err instanceof Error ? err.message : 'Failed to update book');
+        console.error('Error updating book:', {
+            message: err.message,
+            response: err.response?.data,
+            status: err.response?.status,
+        });
     } finally {
-      setSubmitting(false);
+        setSubmitting(false);
     }
   };
 
