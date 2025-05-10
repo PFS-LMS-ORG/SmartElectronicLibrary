@@ -3,6 +3,7 @@ import { Book, CheckCircle, X, Info, Image, Type, Star, Hash, Users, Tag, FileTe
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import Layout from '@/components/layout/layout';
+import axios from 'axios';
 
 interface BookFormData {
   title: string;
@@ -47,26 +48,25 @@ const CreateBookPage: React.FC = () => {
   // Fetch existing categories for dropdown suggestions
   useEffect(() => {
     const fetchCategories = async () => {
-      try {
-        setIsLoadingCategories(true);
-        const token = localStorage.getItem('token');
-        if (!token) throw new Error('No authentication token found');
+        try {
+            setIsLoadingCategories(true);
+            const token = localStorage.getItem('token');
+            if (!token) throw new Error('No authentication token found');
 
-        const response = await fetch('/api/books/categories', {
-          headers: { Authorization: `Bearer ${token}` },
-        });
+            const response = await axios.get('/api/books/categories', {
+                headers: { Authorization: `Bearer ${token}` },
+            });
 
-        if (!response.ok) {
-          throw new Error('Failed to fetch categories');
+            setExistingCategories(response.data);
+        } catch (error: any) {
+            console.error('Error fetching categories:', {
+                message: error.message,
+                response: error.response?.data,
+                status: error.response?.status,
+            });
+        } finally {
+            setIsLoadingCategories(false);
         }
-
-        const data = await response.json();
-        setExistingCategories(data);
-      } catch (error) {
-        console.error('Error fetching categories:', error);
-      } finally {
-        setIsLoadingCategories(false);
-      }
     };
 
     fetchCategories();
@@ -153,46 +153,48 @@ const CreateBookPage: React.FC = () => {
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (!validateForm()) {
-      // Show toast for validation errors
-      toast.error('Please fix the form errors before submitting');
-      return;
+        toast.error('Please fix the form errors before submitting');
+        return;
     }
 
-    // Clean up the data before submission (remove empty authors/categories)
     const cleanedFormData = {
-      ...formData,
-      authors: formData.authors.filter(author => author.trim() !== ''),
-      categories: formData.categories.filter(category => category.trim() !== '')
+        ...formData,
+        authors: formData.authors.filter(author => author.trim() !== ''),
+        categories: formData.categories.filter(category => category.trim() !== '')
     };
 
     setIsSubmitting(true);
     try {
-      const token = localStorage.getItem('token');
-      if (!token) throw new Error('No authentication token found');
+        const token = localStorage.getItem('token');
+        if (!token) throw new Error('No authentication token found');
 
-      const response = await fetch('/api/books', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(cleanedFormData),
-      });
+        const response = await axios.post('/api/books', cleanedFormData, {
+            headers: {
+                Authorization: `Bearer ${token}`,
+                'Content-Type': 'application/json',
+            },
+        });
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to create book');
-      }
-
-      const bookData = await response.json();
-      toast.success('Book created successfully!');
-      navigate('/admin/books');
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to create book');
+        if (response.status !== 201) {
+            console.error('Error creating book:', {
+                message: response.data?.error || 'Failed to create book',
+                status: response.status,
+            });
+            throw new Error('Failed to create book');
+        }
+        toast.success('Book created successfully!');
+        navigate('/admin/books');
+    } catch (err: any) {
+        console.error('Error creating book:', {
+            message: err.message,
+            response: err.response?.data,
+            status: err.response?.status,
+        });
+        toast.error(err instanceof Error ? err.message : 'Failed to create book');
     } finally {
-      setIsSubmitting(false);
+        setIsSubmitting(false);
     }
-  };
+};
 
   // Reset available books when total books changes
   useEffect(() => {
@@ -266,7 +268,7 @@ const CreateBookPage: React.FC = () => {
                   <div className="space-y-6">
                     {/* Title */}
                     <div>
-                      <label className="block text-sm font-medium text-gray-300 mb-1 flex items-center">
+                      <label className="text-sm font-medium text-gray-300 mb-1 flex items-center">
                         <Type className="h-4 w-4 mr-1 text-amber-400" />
                         Title <span className="text-red-400 ml-1">*</span>
                       </label>
@@ -285,7 +287,7 @@ const CreateBookPage: React.FC = () => {
 
                     {/* Authors */}
                     <div>
-                      <label className="block text-sm font-medium text-gray-300 mb-1 flex items-center">
+                      <label className="text-sm font-medium text-gray-300 mb-1 flex items-center">
                         <Users className="h-4 w-4 mr-1 text-amber-400" />
                         Authors <span className="text-red-400 ml-1">*</span>
                       </label>
@@ -324,67 +326,74 @@ const CreateBookPage: React.FC = () => {
 
                     {/* Categories */}
                     <div>
-                      <label className="block text-sm font-medium text-gray-300 mb-1 flex items-center">
-                        <Tag className="h-4 w-4 mr-1 text-amber-400" />
-                        Categories <span className="text-red-400 ml-1">*</span>
+                      <label className="text-sm font-medium text-gray-300 mb-1 flex items-center">
+                          <Tag className="h-4 w-4 mr-1 text-amber-400" />
+                          Categories <span className="text-red-400 ml-1">*</span>
                       </label>
-                      {formData.categories.map((category, index) => (
-                        <div key={index} className="relative mb-2">
-                          <div className="flex items-center space-x-2">
-                            <input
-                              type="text"
-                              value={category}
-                              onChange={(e) => handleInputChange(e, index, 'categories')}
-                              onFocus={() => setShowCategoryDropdown(index)}
-                              className={`flex-1 px-3 py-2 bg-gray-700 border ${
-                                errors.categories && index === 0 ? 'border-red-500' : 'border-gray-600'
-                              } rounded-md text-white focus:outline-none focus:ring-2 focus:ring-amber-500`}
-                              placeholder={`Category ${index + 1}`}
-                            />
-                            {index > 0 && (
-                              <button
-                                type="button"
-                                onClick={() => removeField('categories', index)}
-                                className="p-1 text-red-400 hover:text-red-300"
-                                title="Remove category"
-                              >
-                                <X className="h-5 w-5" />
-                              </button>
-                            )}
+                      {isLoadingCategories ? (
+                          <div className="flex items-center px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-gray-400">
+                              <div className="animate-spin h-5 w-5 border-b-2 border-amber-400 rounded-full mr-2"></div>
+                              Loading categories...
                           </div>
-                          
-                          {/* Category dropdown */}
-                          {showCategoryDropdown === index && existingCategories.length > 0 && (
-                            <div className="absolute z-10 mt-1 w-full max-h-48 overflow-auto bg-gray-700 border border-gray-600 rounded-md shadow-lg">
-                              {existingCategories
-                                .filter(c => c.name.toLowerCase().includes(category.toLowerCase()))
-                                .map(c => (
-                                  <div
-                                    key={c.id}
-                                    className="px-3 py-2 cursor-pointer hover:bg-gray-600 text-white"
-                                    onClick={() => selectCategory(c.name, index)}
-                                  >
-                                    {c.name}
+                      ) : (
+                          <>
+                              {formData.categories.map((category, index) => (
+                                  <div key={index} className="relative mb-2">
+                                      <div className="flex items-center space-x-2">
+                                          <input
+                                              type="text"
+                                              value={category}
+                                              onChange={(e) => handleInputChange(e, index, 'categories')}
+                                              onFocus={() => setShowCategoryDropdown(index)}
+                                              className={`flex-1 px-3 py-2 bg-gray-700 border ${
+                                                  errors.categories && index === 0 ? 'border-red-500' : 'border-gray-600'
+                                              } rounded-md text-white focus:outline-none focus:ring-2 focus:ring-amber-500`}
+                                              placeholder={`Category ${index + 1}`}
+                                          />
+                                          {index > 0 && (
+                                              <button
+                                                  type="button"
+                                                  onClick={() => removeField('categories', index)}
+                                                  className="p-1 text-red-400 hover:text-red-300"
+                                                  title="Remove category"
+                                              >
+                                                  <X className="h-5 w-5" />
+                                              </button>
+                                          )}
+                                      </div>
+                                      {showCategoryDropdown === index && existingCategories.length > 0 && (
+                                          <div className="absolute z-10 mt-1 w-full max-h-48 overflow-auto bg-gray-700 border border-gray-600 rounded-md shadow-lg">
+                                              {existingCategories
+                                                  .filter(c => c.name.toLowerCase().includes(category.toLowerCase()))
+                                                  .map(c => (
+                                                      <div
+                                                          key={c.id}
+                                                          className="px-3 py-2 cursor-pointer hover:bg-gray-600 text-white"
+                                                          onClick={() => selectCategory(c.name, index)}
+                                                      >
+                                                          {c.name}
+                                                      </div>
+                                                  ))}
+                                          </div>
+                                      )}
                                   </div>
-                                ))}
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                      <button
-                        type="button"
-                        onClick={() => addField('categories')}
-                        className="mt-1 px-3 py-1 bg-gray-700 border border-gray-600 text-amber-400 rounded-md hover:bg-gray-600 flex items-center text-sm"
-                      >
-                        <span className="mr-1">+</span> Add Category
-                      </button>
-                      {errors.categories && <p className="text-red-400 text-xs mt-1">{errors.categories}</p>}
-                    </div>
+                              ))}
+                              <button
+                                  type="button"
+                                  onClick={() => addField('categories')}
+                                  className="mt-1 px-3 py-1 bg-gray-700 border border-gray-600 text-amber-400 rounded-md hover:bg-gray-600 flex items-center text-sm"
+                              >
+                                  <span className="mr-1">+</span> Add Category
+                              </button>
+                              {errors.categories && <p className="text-red-400 text-xs mt-1">{errors.categories}</p>}
+                          </>
+                      )}
+                  </div>
                   </div>
                   
                   {/* Right Column - Cover Image */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-1 flex items-center">
+                    <label className="text-sm font-medium text-gray-300 mb-1 flex items-center">
                       <Image className="h-4 w-4 mr-1 text-amber-400" />
                       Cover Image URL
                     </label>
@@ -438,7 +447,7 @@ const CreateBookPage: React.FC = () => {
             {activeTab === 'details' && (
               <div className="space-y-6">
                 <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-1 flex items-center">
+                  <label className="text-sm font-medium text-gray-300 mb-1 flex items-center">
                     <AlignLeft className="h-4 w-4 mr-1 text-amber-400" />
                     Description
                   </label>
@@ -457,7 +466,7 @@ const CreateBookPage: React.FC = () => {
                 </div>
                 
                 <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-1 flex items-center">
+                  <label className="text-sm font-medium text-gray-300 mb-1 flex items-center">
                     <FileText className="h-4 w-4 mr-1 text-amber-400" />
                     Summary
                   </label>
@@ -479,7 +488,7 @@ const CreateBookPage: React.FC = () => {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   {/* Rating */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-1 flex items-center">
+                    <label className="text-sm font-medium text-gray-300 mb-1 flex items-center">
                       <Star className="h-4 w-4 mr-1 text-amber-400" />
                       Rating (0-5)
                     </label>
@@ -538,7 +547,7 @@ const CreateBookPage: React.FC = () => {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4">
                   {/* Total Books */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-1 flex items-center">
+                    <label className="text-sm font-medium text-gray-300 mb-1 flex items-center">
                       <Hash className="h-4 w-4 mr-1 text-amber-400" />
                       Total Copies <span className="text-red-400 ml-1">*</span>
                     </label>
@@ -560,7 +569,7 @@ const CreateBookPage: React.FC = () => {
                   
                   {/* Available Books */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-1 flex items-center">
+                    <label className="text-sm font-medium text-gray-300 mb-1 flex items-center">
                       <Hash className="h-4 w-4 mr-1 text-amber-400" />
                       Available Copies <span className="text-red-400 ml-1">*</span>
                     </label>
