@@ -1,141 +1,203 @@
 import React, { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { 
   Search, User, Trash2, ChevronUp, ChevronDown, 
   Users as UsersIcon, Filter, ArrowUpDown, Shield, UserCheck, 
-  BookOpen, Calendar, Mail, RefreshCw 
+  BookOpen, Calendar, Mail, RefreshCw, X
 } from 'lucide-react';
 import Layout from '@/components/layout/layout';
+import axios from 'axios';
+import { toast } from 'react-toastify';
+import Pagination from '@/components/common/Pagination';
+
+interface Rental {
+  id: number;
+  book_id: number;
+  rented_at: string;
+  returned_at: string | null;
+  book: {
+    id: number;
+    title: string;
+    authors: string[];
+    categories: string[];
+    cover_url: string;
+  };
+}
+
+interface RentalRequest {
+  id: number;
+  book_id: number;
+  requested_at: string;
+  status: string;
+  book: {
+    id: number;
+    title: string;
+    authors: string[];
+    categories: string[];
+    cover_url: string;
+  };
+}
 
 interface User {
   id: number;
   name: string;
   email: string;
   role: string;
-  books_borrowed?: number;
-  date_joined?: string;
+  date_joined: string;
+  rentals: Rental[];
+  rental_requests: RentalRequest[];
 }
 
-// Color mapping for roles
-const roleColors = {
-  admin: {
-    bg: 'bg-green-900/30',
-    text: 'text-green-400',
-    border: 'border-green-800',
-    icon: <Shield size={14} className="mr-1" />
-  },
-  user: {
-    bg: 'bg-indigo-900/30',
-    text: 'text-indigo-400',
-    border: 'border-indigo-800',
-    icon: <UserCheck size={14} className="mr-1" />
-  }
-};
+interface PaginationData {
+  users: User[];
+  total_count: number;
+  total_pages: number;
+}
+
 
 const UsersTable: React.FC = () => {
+  const [searchParams, setSearchParams] = useSearchParams();
+  
   const [users, setUsers] = useState<User[]>([]);
-  const [filteredUsers, setFilteredUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [sortField, setSortField] = useState<keyof User>('name');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const [roleDropdownVisible, setRoleDropdownVisible] = useState<number | null>(null);
-  const [searchQuery, setSearchQuery] = useState<string>('');
-  const [filterRole, setFilterRole] = useState<string | null>(null);
-  const [showFilters, setShowFilters] = useState<boolean>(false);
+  const [searchQuery, setSearchQuery] = useState<string>(searchParams.get('search') || '');
+  const [filterRole, setFilterRole] = useState<string | null>(searchParams.get('role') || null);
+  
+  // Pagination states
+  const [currentPage, setCurrentPage] = useState<number>(parseInt(searchParams.get('page') || '1', 10));
+  const [totalPages, setTotalPages] = useState<number>(1);
+  const [totalUsers, setTotalUsers] = useState<number>(0);
+  const [perPage, setPerPage] = useState<number>(parseInt(searchParams.get('per_page') || '10', 10));
 
+  // Update URL when pagination params change
   useEffect(() => {
-    fetchUsers();
+    const params = new URLSearchParams();
+    if (searchQuery) params.set('search', searchQuery);
+    if (currentPage !== 1) params.set('page', currentPage.toString());
+    if (perPage !== 10) params.set('per_page', perPage.toString());
+    if (filterRole) params.set('role', filterRole);
+    setSearchParams(params);
+  }, [currentPage, perPage, searchQuery, filterRole, setSearchParams]);
+
+  // Fetch users when parameters change
+  useEffect(() => {
+    fetchUsers(searchQuery, currentPage, perPage, filterRole);
+  }, [currentPage, perPage, filterRole]);
+
+  // Apply filters when users, searchQuery, or filterRole changes
+  useEffect(() => {
+    // If we're not fetching data based on filters (like for local filtering),
+    // we would do it here, but we're handling this server-side now
   }, []);
 
-  useEffect(() => {
-    // Apply filters whenever users, searchQuery, or filterRole changes
-    let result = [...users];
-    
-    // Apply search filter
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase();
-      result = result.filter(user => 
-        user.name.toLowerCase().includes(query) || 
-        user.email.toLowerCase().includes(query)
-      );
-    }
-    
-    // Apply role filter
-    if (filterRole) {
-      result = result.filter(user => user.role.toLowerCase() === filterRole.toLowerCase());
-    }
-    
-    setFilteredUsers(result);
-  }, [users, searchQuery, filterRole]);
-
-  const fetchUsers = async () => {
+  const fetchUsers = async (query: string = '', page: number = 1, itemsPerPage: number = 10, role: string | null = null) => {
     try {
       setLoading(true);
-      const response = await fetch('/api/users');
       
-      if (!response.ok) {
-        throw new Error(`HTTP error! Status: ${response.status}`);
-      }
+      const token = localStorage.getItem('token');
+      if (!token) throw new Error('No authentication token found');
       
-      const data = await response.json();
+      // Build query parameters
+      const params = new URLSearchParams();
+      if (query) params.append('search', query);
+      params.append('page', page.toString());
+      params.append('per_page', itemsPerPage.toString());
+      if (role) params.append('role', role);
+
+      const url = `/api/users?${params.toString()}`;
       
-      // Add UI-specific attributes if they don't exist in the API response
-      const enhancedUsers = data.map((user: User) => ({
-        ...user,
-        books_borrowed: user.books_borrowed || Math.floor(Math.random() * 30) + 5,
-        date_joined: user.date_joined || 'Dec 19 2023'
-      }));
+      const response = await axios.get(url, {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      });
+
+      // Assuming the backend returns { users: User[], total_count: number, total_pages: number }
+      const data: PaginationData = response.data;
       
-      setUsers(enhancedUsers);
-      setFilteredUsers(enhancedUsers);
+      setUsers(data.users);
+      setTotalUsers(data.total_count);
+      setTotalPages(data.total_pages);
       setError(null);
     } catch (err) {
-      setError('Failed to fetch users. Please try again later.');
+      const errorMessage = err instanceof Error
+        ? err.message
+        : 'Failed to fetch users. Please try again later.';
+      setError(errorMessage);
       console.error('Error fetching users:', err);
+      setUsers([]);
+      setTotalUsers(0);
+      setTotalPages(1);
     } finally {
       setLoading(false);
     }
   };
 
+  const handleSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    setCurrentPage(1); // Reset to first page on new search
+    fetchUsers(searchQuery, 1, perPage, filterRole);
+  };
+
   const handleRoleChange = async (userId: number, newRole: string) => {
     try {
-      const response = await fetch(`/api/users/${userId}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ role: newRole }),
-      });
+      const token = localStorage.getItem('token');
+      if (!token) throw new Error('No authentication token found');
       
-      if (!response.ok) {
-        throw new Error(`HTTP error! Status: ${response.status}`);
-      }
-      
-      // Update the local state to reflect the change immediately
-      setUsers(users.map(user => 
+      await axios.put(`/api/users/${userId}`, 
+        { role: newRole },
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+
+      // Update the user in the current list
+      setUsers(users.map(user =>
         user.id === userId ? { ...user, role: newRole } : user
       ));
       
       setRoleDropdownVisible(null);
+      toast.success(`User role updated to ${newRole}`);
     } catch (err) {
       console.error('Error updating user role:', err);
+      toast.error('Failed to update user role');
     }
   };
 
   const handleDeleteUser = async (userId: number) => {
+    // Find the user to be deleted
+    const userToDelete = users.find(user => user.id === userId);
+    
+    // Check if the user is an admin
+    if (userToDelete?.role.toLowerCase() === 'admin') {
+      toast.error('Admins cannot be deleted for security reasons.');
+      return;
+    }
+    
     if (window.confirm('Are you sure you want to delete this user?')) {
       try {
-        const response = await fetch(`/api/users/${userId}`, {
-          method: 'DELETE',
+        const token = localStorage.getItem('token');
+        if (!token) throw new Error('No authentication token found');
+        
+        await axios.delete(`/api/users/${userId}`, {
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
         });
-        
-        if (!response.ok) {
-          throw new Error(`HTTP error! Status: ${response.status}`);
-        }
-        
-        setUsers(users.filter(user => user.id !== userId));
+
+        // After successful deletion, refresh the current page
+        toast.success('User deleted successfully');
+        fetchUsers(searchQuery, currentPage, perPage, filterRole);
       } catch (err) {
         console.error('Error deleting user:', err);
+        toast.error('Failed to delete user');
       }
     }
   };
@@ -157,29 +219,69 @@ const UsersTable: React.FC = () => {
     setSearchQuery(e.target.value);
   };
   
+  const handleRoleFilterChange = (role: string | null) => {
+    setFilterRole(role);
+    setCurrentPage(1); // Reset to first page when role filter changes
+  };
+  
+  const handlePageChange = (pageNumber: number) => {
+    // Ensure page number is within valid range
+    const page = Math.max(1, Math.min(pageNumber, totalPages));
+    setCurrentPage(page);
+  };
+
+
+  const handlePerPageChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const newPerPage = parseInt(e.target.value, 10);
+    setPerPage(newPerPage);
+    setCurrentPage(1); // Reset to first page when items per page changes
+  };
+  
   const clearFilters = () => {
     setSearchQuery('');
     setFilterRole(null);
-    setFilteredUsers(users);
+    setCurrentPage(1);
+    fetchUsers('', 1, perPage, null);
   };
 
-  const sortedUsers = [...filteredUsers].sort((a, b) => {
-    const valueA = a[sortField] ?? '';
-    const valueB = b[sortField] ?? '';
+  // Get active rentals count (books currently borrowed)
+  const getActiveRentals = (user: User) => {
+    return user.rentals.filter(rental => rental.returned_at === null).length;
+  };
+
+  // Format date to a readable format
+  const formatDate = (dateString: string) => {
+    if (!dateString) return 'Unknown';
     
-    if (typeof valueA === 'number' && typeof valueB === 'number') {
-      return sortDirection === 'asc' ? valueA - valueB : valueB - valueA;
-    }
-    
-    if (valueA < valueB) return sortDirection === 'asc' ? -1 : 1;
-    if (valueA > valueB) return sortDirection === 'asc' ? 1 : -1;
-    return 0;
-  });
+    const date = new Date(dateString);
+    const options: Intl.DateTimeFormatOptions = { year: 'numeric', month: 'short', day: 'numeric' };
+    return date.toLocaleDateString('en-US', options);
+  };
 
   const getSortIcon = (field: keyof User) => {
     if (sortField !== field) return <ArrowUpDown size={14} className="opacity-50" />;
     return sortDirection === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />;
   };
+
+
+  const refreshCurrentPage = () => {
+    fetchUsers(searchQuery, currentPage, perPage, filterRole);
+  };
+
+  // Sort users based on selected field
+  const sortedUsers = [...users].sort((a, b) => {
+    const aValue = a[sortField];
+    const bValue = b[sortField];
+    
+    if (typeof aValue === 'string' && typeof bValue === 'string') {
+      return sortDirection === 'asc' 
+        ? aValue.localeCompare(bValue) 
+        : bValue.localeCompare(aValue);
+    } else if (typeof aValue === 'number' && typeof bValue === 'number') {
+      return sortDirection === 'asc' ? aValue - bValue : bValue - aValue;
+    }
+    return 0;
+  });
 
   return (
     <Layout>
@@ -200,85 +302,101 @@ const UsersTable: React.FC = () => {
                 </div>
               </div>
               
-              <div className="flex items-center gap-2 w-full sm:w-auto">
-                <div className="relative flex-grow">
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => handleSort('name')}
+                  className="px-3 py-1.5 text-sm rounded-lg flex items-center bg-gray-800 text-gray-300 hover:bg-gray-700 transition-colors"
+                >
+                  A-Z <span className="ml-1">{getSortIcon('name')}</span>
+                </button>
+                
+                <button 
+                  onClick={refreshCurrentPage} 
+                  className="px-3 py-1.5 text-sm rounded-lg flex items-center bg-gray-800 text-gray-300 hover:bg-gray-700 transition-colors"
+                  title="Refresh users"
+                >
+                  <RefreshCw size={14} className="mr-1" /> Refresh
+                </button>
+              </div>
+            </div>
+            
+            {/* Search and Filter Area */}
+            <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* Search Form */}
+              <div className="md:col-span-2">
+                <form onSubmit={handleSearch} className="relative">
                   <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                     <Search size={16} className="text-gray-400" />
                   </div>
                   <input
                     type="text"
-                    className="pl-10 pr-4 py-2 border border-gray-700 rounded-lg bg-gray-800 text-gray-100 w-full focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                    placeholder="Search users..."
+                    className="w-full pl-10 pr-4 py-2 border border-gray-700 rounded-lg bg-gray-800 text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                    placeholder="Search users by name or email..."
                     value={searchQuery}
                     onChange={handleSearchChange}
                   />
+                  <button
+                    type="submit"
+                    className="absolute right-2 top-1/2 transform -translate-y-1/2 p-1.5 rounded-md bg-indigo-900/50 text-indigo-300 hover:bg-indigo-800 transition-colors"
+                  >
+                    <Search size={16} />
+                  </button>
+                </form>
+              </div>
+
+              {/* Role Filter */}
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <Filter size={16} className="text-gray-400" />
                 </div>
-                
-                <button 
-                  onClick={() => setShowFilters(!showFilters)} 
-                  className={`p-2 rounded-lg border ${showFilters 
-                    ? 'border-indigo-500 text-indigo-400 bg-indigo-900/20' 
-                    : 'border-gray-700 text-gray-300'}`}
+                <select
+                  value={filterRole || ''}
+                  onChange={(e) => handleRoleFilterChange(e.target.value || null)}
+                  className="w-full pl-10 pr-4 py-2 border border-gray-700 rounded-lg bg-gray-800 text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 appearance-none"
+                  style={{ backgroundImage: "none" }} // Remove default arrow
                 >
-                  <Filter size={20} />
-                </button>
-                
-                <button 
-                  onClick={fetchUsers} 
-                  className="p-2 rounded-lg border border-gray-700 text-gray-300 hover:bg-gray-800"
-                  title="Refresh users"
-                >
-                  <RefreshCw size={20} />
-                </button>
+                  <option value="">All Roles</option>
+                  <option value="admin">Admin</option>
+                  <option value="user">User</option>
+                </select>
+                <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                  <ChevronDown size={16} className="text-gray-400" />
+                </div>
               </div>
             </div>
             
-            {/* Filters */}
-            {showFilters && (
-              <div className="mt-4 flex flex-wrap items-center gap-2 pt-4 border-t border-gray-800">
-                <div className="text-sm font-medium text-gray-300 mr-2">Filter by:</div>
-                
-                <button
-                  onClick={() => setFilterRole(null)}
-                  className={`px-3 py-1.5 text-sm rounded-lg flex items-center ${
-                    filterRole === null 
-                      ? 'bg-indigo-900/30 text-indigo-400' 
-                      : 'bg-gray-800 text-gray-300'
-                  }`}
-                >
-                  All
-                </button>
-                
-                <button
-                  onClick={() => setFilterRole('admin')}
-                  className={`px-3 py-1.5 text-sm rounded-lg flex items-center ${
-                    filterRole === 'admin' 
-                      ? 'bg-green-900/30 text-green-400' 
-                      : 'bg-gray-800 text-gray-300'
-                  }`}
-                >
-                  <Shield size={14} className="mr-1" /> Admins
-                </button>
-                
-                <button
-                  onClick={() => setFilterRole('user')}
-                  className={`px-3 py-1.5 text-sm rounded-lg flex items-center ${
-                    filterRole === 'user' 
-                      ? 'bg-indigo-900/30 text-indigo-400' 
-                      : 'bg-gray-800 text-gray-300'
-                  }`}
-                >
-                  <UserCheck size={14} className="mr-1" /> Users
-                </button>
-                
-                {(searchQuery || filterRole) && (
-                  <button
-                    onClick={clearFilters}
-                    className="px-3 py-1.5 text-sm rounded-lg bg-gray-800 text-gray-300 ml-auto"
-                  >
-                    Clear filters
-                  </button>
+            {/* Active filters display */}
+            {(searchQuery || filterRole) && (
+              <div className="mt-3 flex items-center flex-wrap gap-2">
+                <span className="text-xs text-gray-400">Active filters:</span>
+                {searchQuery && (
+                  <span className="inline-flex items-center px-2 py-1 bg-indigo-900/30 text-indigo-300 text-xs rounded">
+                    Search: {searchQuery}
+                    <button 
+                      onClick={() => { setSearchQuery(''); setCurrentPage(1); }}
+                      className="ml-1.5 hover:text-white"
+                    >
+                      <X size={12} />
+                    </button>
+                  </span>
                 )}
+                {filterRole && (
+                  <span className="inline-flex items-center px-2 py-1 bg-indigo-900/30 text-indigo-300 text-xs rounded">
+                    Role: {filterRole}
+                    <button 
+                      onClick={() => { setFilterRole(null); setCurrentPage(1); }}
+                      className="ml-1.5 hover:text-white"
+                    >
+                      <X size={12} />
+                    </button>
+                  </span>
+                )}
+                <button
+                  onClick={clearFilters}
+                  className="text-xs text-gray-400 hover:text-gray-300 ml-2"
+                >
+                  Clear all
+                </button>
               </div>
             )}
           </div>
@@ -332,14 +450,10 @@ const UsersTable: React.FC = () => {
                       </button>
                     </th>
                     <th className="text-left py-3 px-4 font-medium text-sm text-gray-300">
-                      <button 
-                        className="flex items-center font-medium focus:outline-none"
-                        onClick={() => handleSort('books_borrowed')}
-                      >
+                      <div className="flex items-center font-medium">
                         <BookOpen size={14} className="mr-2" />
                         Books Borrowed
-                        <span className="ml-1">{getSortIcon('books_borrowed')}</span>
-                      </button>
+                      </div>
                     </th>
                     <th className="text-center py-3 px-4 font-medium text-sm text-gray-300">
                       Actions
@@ -385,7 +499,7 @@ const UsersTable: React.FC = () => {
                           </div>
                         </td>
                         <td className="py-4 px-4 text-sm text-gray-300">
-                          {user.date_joined}
+                          {formatDate(user.date_joined)}
                         </td>
                         <td className="py-4 px-4 relative">
                           <div 
@@ -445,17 +559,27 @@ const UsersTable: React.FC = () => {
                         <td className="py-4 px-4 text-sm text-gray-300">
                           <div className="flex items-center">
                             <BookOpen size={14} className="mr-2 text-indigo-400" />
-                            {user.books_borrowed}
+                            {getActiveRentals(user)}
                           </div>
                         </td>
                         <td className="py-4 px-4 text-center">
-                          <button 
-                            className="inline-flex items-center justify-center w-8 h-8 rounded-full text-red-400 hover:bg-red-900/20 transition-colors"
-                            onClick={() => handleDeleteUser(user.id)}
-                            title="Delete user"
-                          >
-                            <Trash2 size={16} />
-                          </button>
+                          {user.role.toLowerCase() === 'admin' ? (
+                            <button 
+                              className="inline-flex items-center justify-center w-8 h-8 rounded-full text-gray-500 cursor-not-allowed"
+                              title="Admins cannot be deleted"
+                              disabled
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          ) : (
+                            <button 
+                              className="inline-flex items-center justify-center w-8 h-8 rounded-full text-red-400 hover:bg-red-900/20 transition-colors"
+                              onClick={() => handleDeleteUser(user.id)}
+                              title="Delete user"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          )}
                         </td>
                       </tr>
                     ))
@@ -465,22 +589,19 @@ const UsersTable: React.FC = () => {
             </div>
           )}
           
-          {/* Footer with pagination */}
-          <div className="p-4 border-t border-gray-800 flex justify-between items-center">
-            <div className="text-sm text-gray-400">
-              Showing <span className="font-medium text-gray-300">{sortedUsers.length}</span> of{' '}
-              <span className="font-medium text-gray-300">{users.length}</span> users
-            </div>
-            
-            <div className="flex items-center space-x-2">
-              <button className="px-3 py-1 border border-gray-700 rounded-md text-gray-300 bg-gray-800 hover:bg-gray-700 disabled:opacity-50" disabled>
-                Previous
-              </button>
-              <button className="px-3 py-1 border border-gray-700 rounded-md text-gray-300 bg-gray-800 hover:bg-gray-700 disabled:opacity-50" disabled>
-                Next
-              </button>
-            </div>
-          </div>
+          {/* Pagination */}
+          <Pagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            onPageChange={handlePageChange}
+            onPerPageChange={handlePerPageChange}
+            totalItems={totalUsers}
+            perPage={perPage}
+            itemsPerPageOptions={[5, 10, 20, 50]}
+            colorScheme="green"
+            itemLabel="users"
+          />
+
         </div>
       </div>
     </Layout>
