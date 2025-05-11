@@ -1,6 +1,6 @@
 // contexts/authcontext.tsx
 import React, { createContext, useState, useEffect, ReactNode } from 'react';
-import { getCurrentUser, login, logout as authLogout } from '../services/auth';
+import { getCurrentUser, login as apiLogin, logout as authLogout } from '../services/auth';
 import BackgroundWrapper from '../components/ui/BackgroundWrapper';
 
 interface User {
@@ -14,7 +14,7 @@ interface AuthContextType {
   user: User | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<User>;
   logout: () => void;
   isAdmin: () => boolean;
   isUser: () => boolean;
@@ -33,6 +33,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       console.log('Initializing auth state');
       const token = localStorage.getItem('token');
       console.log('Token found:', token ? 'Yes' : 'No');
+      
       if (token) {
         try {
           const userData = await getCurrentUser();
@@ -45,7 +46,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           setIsAuthenticated(true);
         } catch (error) {
           console.error('Failed to fetch user:', error);
-          authLogout();
+          // Clear invalid token
+          localStorage.removeItem('token');
           setUser(null);
           setIsAuthenticated(false);
         }
@@ -60,25 +62,43 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         setIsLoading(false);
       }, 800);
     };
+    
     initializeAuth();
   }, []);
 
-  const handleLogin = async (email: string, password: string) => {
+  const handleLogin = async (email: string, password: string): Promise<User> => {
     console.log('Logging in:', email);
-    setIsLoading(true); // Show loading screen during login
+    
+    // We don't set loading state here anymore - let the login component handle it
     try {
-      const { user } = await login({ email, password });
+      const { user, access_token } = await apiLogin({ email, password });
       console.log('Login successful, user:', user);
-      setUser({
-        ...user,
-        role: user.role as 'user' | 'admin', // Ensure role matches the expected type
-      });
-      setIsAuthenticated(true);
+      
+      // Make sure token is set before updating state
+      if (access_token) {
+        // Store token first
+        localStorage.setItem('token', access_token);
+        
+        // Create a properly typed user object
+        const typedUser: User = {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          role: user.role as 'user' | 'admin', // Ensure role matches the expected type
+        };
+        
+        // Then update state
+        setUser(typedUser);
+        setIsAuthenticated(true);
+        return typedUser; // Return the properly typed user
+      } else {
+        // No token was returned
+        throw new Error('No access token received');
+      }
     } catch (error) {
-      console.error('Login failed:', error);
-      throw error; // Re-throw to be handled by the login component
-    } finally {
-      setIsLoading(false);
+      console.error('Login failed in AuthContext:', error);
+      // Important: We re-throw the error to let the calling component handle it
+      throw error;
     }
   };
 
@@ -108,6 +128,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     return isAuthenticated && user?.role === requiredRole;
   };
 
+  // Only show loading spinner when initializing the auth state
   if (isLoading) {
     console.log('Rendering loading state');
     return (
