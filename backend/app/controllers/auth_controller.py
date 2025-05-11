@@ -32,11 +32,16 @@ def login():
             logger.warning("Missing email or password")
             return jsonify({'message': 'Email and password are required'}), 400
 
+        # Check if the email exists in pending account requests
+        pending_request = AccountRequest.query.filter_by(email=email, status='pending').first()
+        if pending_request:
+            logger.warning("Login attempt for pending account: %s", email)
+            return jsonify({'message': 'Your account is pending admin approval'}), 403
+
         user = User.query.filter_by(email=email).first()
         if not user or not user.check_password(password):
             logger.warning("Invalid credentials for email: %s", email)
             return jsonify({'message': 'Invalid email or password'}), 401
-
         access_token = create_access_token(identity=str(user.id))
         logger.debug("Generated token for user %s: %s", user.id, access_token)
         return jsonify({
