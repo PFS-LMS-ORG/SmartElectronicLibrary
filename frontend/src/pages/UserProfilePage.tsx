@@ -7,6 +7,9 @@ import BackgroundWrapper from '@/components/ui/BackgroundWrapper';
 import BookCover from '@/components/ui/BookCover';
 import axios from 'axios';
 
+import { Link } from 'react-router-dom';
+import { BookmarkIcon, ThumbsUp } from 'lucide-react';
+
 interface Rental {
   id: number;
   book_id: number;
@@ -35,6 +38,40 @@ interface RentalRequest {
   };
 }
 
+
+interface UserStats {
+  days_active: number;
+  favorite_category: string | null;
+  books_read: number;
+  currently_reading: number;
+  liked_articles_count: number;
+  bookmarked_articles_count: number;
+}
+
+interface ProfileArticle {
+  id: string;
+  title: string;
+  slug: string;
+  coverImageUrl: string;
+  category: string;
+  summary: string;
+  createdAt: string;
+}
+
+interface UserProfile {
+  user: {
+    id: number;
+    name: string;
+    email: string;
+    role: string;
+    date_joined: string;
+  };
+  stats: UserStats;
+  liked_articles: ProfileArticle[];
+  bookmarked_articles: ProfileArticle[];
+}
+
+
 const UserProfilePage: React.FC = () => {
   const { user, isAuthenticated, isLoading } = useAuth();
   const navigate = useNavigate();
@@ -44,7 +81,9 @@ const UserProfilePage: React.FC = () => {
   const [pendingRequests, setPendingRequests] = useState<RentalRequest[]>([]);
   const [isLoadingRentals, setIsLoadingRentals] = useState(true);
   const [isLoadingRequests, setIsLoadingRequests] = useState(true);
-  const [activeTab, setActiveTab] = useState<'rentals' | 'history' | 'requests'>('rentals');
+  const [activeTab, setActiveTab] = useState<'rentals' | 'history' | 'requests' | 'articles'>('rentals');
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  const [isLoadingProfile, setIsLoadingProfile] = useState(true);
   
   useEffect(() => {
     if (isLoading) return;
@@ -54,10 +93,31 @@ const UserProfilePage: React.FC = () => {
       return;
     }
     
+    fetchUserProfile();
     fetchUserRentals();
     fetchUserRequests();
   }, [isAuthenticated, isLoading, navigate]);
-  
+
+
+  const fetchUserProfile = async () => {
+    try {
+      setIsLoadingProfile(true);
+      const token = localStorage.getItem('token');
+      if (!token) throw new Error('No token found');
+      
+      const response = await axios.get('/api/user/profile', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      
+      setUserProfile(response.data);
+    } catch (error) {
+      console.error('Error fetching user profile:', error);
+    } finally {
+      setIsLoadingProfile(false);
+    }
+  };
+
+
   const fetchUserRentals = async () => {
     try {
       setIsLoadingRentals(true);
@@ -147,10 +207,10 @@ const UserProfilePage: React.FC = () => {
   
   // Generate random reading stats for demo purposes
   const readingStats = {
-    booksRead: rentalHistory.length,
-    currentlyReading: activeRentals.length,
-    daysActive: Math.floor(Math.random() * 200) + 30,
-    favCategory: user?.role === 'admin' ? 'Technology' : 'Fiction',
+    booksRead: userProfile?.stats.books_read || rentalHistory.length,
+    currentlyReading: userProfile?.stats.currently_reading || activeRentals.length,
+    daysActive: userProfile?.stats.days_active || 0,
+    favCategory: userProfile?.stats.favorite_category || 'None yet',
   };
   
   if (isLoading) {
@@ -282,6 +342,24 @@ const UserProfilePage: React.FC = () => {
             >
               Rental History
               {activeTab === 'history' && (
+                <div className="absolute bottom-0 left-0 w-full h-0.5 bg-amber-500"></div>
+              )}
+            </button>
+            <button
+              onClick={() => setActiveTab('articles')}
+              className={`flex-1 py-3 px-4 text-center relative ${
+                activeTab === 'articles' 
+                  ? 'text-white font-medium' 
+                  : 'text-gray-400 hover:text-gray-200'
+              }`}
+            >
+              Articles
+              {((userProfile?.liked_articles?.length ?? 0) > 0 || (userProfile?.bookmarked_articles?.length ?? 0) > 0) && (
+                <span className="absolute top-2 right-2 bg-blue-600 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">
+                  {(userProfile?.liked_articles?.length || 0) + (userProfile?.bookmarked_articles?.length || 0)}
+                </span>
+              )}
+              {activeTab === 'articles' && (
                 <div className="absolute bottom-0 left-0 w-full h-0.5 bg-amber-500"></div>
               )}
             </button>
@@ -492,6 +570,109 @@ const UserProfilePage: React.FC = () => {
                     >
                       Browse Books
                     </Button>
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* Articles Tab */}
+            {activeTab === 'articles' && (
+              <>
+                {isLoadingProfile ? (
+                  <div className="flex justify-center py-12">
+                    <div className="animate-spin h-8 w-8 border-b-2 border-amber-400 rounded-full"></div>
+                  </div>
+                ) : (
+                  <div>
+                    {/* Liked Articles */}
+                    <div className="mb-8">
+                      <h3 className="text-xl font-medium text-white mb-4 flex items-center">
+                        <ThumbsUp className="h-5 w-5 mr-2 text-amber-400" />
+                        Liked Articles
+                      </h3>
+                      
+                      {userProfile?.liked_articles && userProfile.liked_articles.length > 0 ? (
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                          {userProfile.liked_articles.map(article => (
+                            <Link 
+                              key={article.id}
+                              to={`/articles/${article.slug}`}
+                              className="bg-gray-800/50 rounded-xl border border-gray-700/50 overflow-hidden hover:border-amber-700/30 transition-all duration-300 hover:shadow-amber-900/10 hover:shadow-lg hover:-translate-y-1"
+                            >
+                              <div className="h-40 w-full overflow-hidden">
+                                <img 
+                                  src={article.coverImageUrl || 'https://placehold.co/600x300'} 
+                                  alt={article.title}
+                                  className="w-full h-full object-cover transition-transform duration-300 hover:scale-105"
+                                />
+                              </div>
+                              <div className="p-4">
+                                <div className="text-xs font-medium text-amber-400 mb-2">{article.category}</div>
+                                <h4 className="text-white font-medium mb-2 line-clamp-2">{article.title}</h4>
+                                <p className="text-gray-400 text-sm line-clamp-3">{article.summary}</p>
+                              </div>
+                            </Link>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="text-center py-6 bg-gray-800/30 rounded-xl border border-gray-700/50">
+                          <ThumbsUp className="h-10 w-10 text-gray-600 mx-auto mb-3" strokeWidth={1} />
+                          <h3 className="text-lg font-medium text-white mb-2">No Liked Articles</h3>
+                          <p className="text-gray-400 mb-4">You haven't liked any articles yet.</p>
+                          <Button
+                            onClick={() => navigate('/articles')}
+                            className="bg-amber-600 hover:bg-amber-700 text-white"
+                          >
+                            Browse Articles
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                    
+                    {/* Bookmarked Articles */}
+                    <div>
+                      <h3 className="text-xl font-medium text-white mb-4 flex items-center">
+                        <BookmarkIcon className="h-5 w-5 mr-2 text-amber-400" />
+                        Bookmarked Articles
+                      </h3>
+                      
+                      {userProfile?.bookmarked_articles && userProfile.bookmarked_articles.length > 0 ? (
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                          {userProfile.bookmarked_articles.map(article => (
+                            <Link 
+                              key={article.id}
+                              to={`/articles/${article.slug}`}
+                              className="bg-gray-800/50 rounded-xl border border-gray-700/50 overflow-hidden hover:border-amber-700/30 transition-all duration-300 hover:shadow-amber-900/10 hover:shadow-lg hover:-translate-y-1"
+                            >
+                              <div className="h-40 w-full overflow-hidden">
+                                <img 
+                                  src={article.coverImageUrl || 'https://placehold.co/600x300'} 
+                                  alt={article.title}
+                                  className="w-full h-full object-cover transition-transform duration-300 hover:scale-105"
+                                />
+                              </div>
+                              <div className="p-4">
+                                <div className="text-xs font-medium text-amber-400 mb-2">{article.category}</div>
+                                <h4 className="text-white font-medium mb-2 line-clamp-2">{article.title}</h4>
+                                <p className="text-gray-400 text-sm line-clamp-3">{article.summary}</p>
+                              </div>
+                            </Link>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="text-center py-6 bg-gray-800/30 rounded-xl border border-gray-700/50">
+                          <BookmarkIcon className="h-10 w-10 text-gray-600 mx-auto mb-3" strokeWidth={1} />
+                          <h3 className="text-lg font-medium text-white mb-2">No Bookmarked Articles</h3>
+                          <p className="text-gray-400 mb-4">You haven't bookmarked any articles yet.</p>
+                          <Button
+                            onClick={() => navigate('/articles')}
+                            className="bg-amber-600 hover:bg-amber-700 text-white"
+                          >
+                            Browse Articles
+                          </Button>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )}
               </>

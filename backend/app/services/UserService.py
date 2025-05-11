@@ -2,6 +2,9 @@
 
 from app.model.User import User
 from app.model.AccountRequest import AccountRequest
+from app.model.Article import Article
+from app.model.ArticleLike import ArticleLike
+from app.model.ArticleBookmark import ArticleBookmark
 from app.db import db
 from datetime import datetime
 from sqlalchemy import or_
@@ -205,3 +208,71 @@ class UserService:
         request.status = 'pending'
         db.session.commit()
         return True
+
+
+    @staticmethod
+    def get_user_profile(user_id):
+        """
+        Get comprehensive user profile information including statistics and article interactions.
+        
+        Args:
+            user_id (int): User ID
+            
+        Returns:
+            dict: User profile information including stats and article interactions
+        """
+        
+        user = User.query.get(user_id)
+        if not user:
+            return None
+        
+        # Calculate days active
+        days_active = (datetime.utcnow() - user.date_joined).days
+        
+        # Get liked articles
+        liked_articles = db.session.query(Article).join(
+            ArticleLike, Article.id == ArticleLike.article_id
+        ).filter(ArticleLike.user_id == user_id).all()
+        
+        # Get bookmarked articles
+        bookmarked_articles = db.session.query(Article).join(
+            ArticleBookmark, Article.id == ArticleBookmark.article_id
+        ).filter(ArticleBookmark.user_id == user_id).all()
+        
+        # Determine favorite category based on rental history
+        favorite_category = None
+        if user.rentals:
+            # Get all categories from user's rentals
+            category_counts = {}
+            for rental in user.rentals:
+                for category in rental.book.categories:
+                    if category.name in category_counts:
+                        category_counts[category.name] += 1
+                    else:
+                        category_counts[category.name] = 1
+            
+            # Find the most frequent category
+            if category_counts:
+                favorite_category = max(category_counts.items(), key=lambda x: x[1])[0]
+        
+        return {
+            'user': {
+                'id': user.id,
+                'name': user.name,
+                'email': user.email,
+                'role': user.role,
+                'date_joined': user.date_joined.isoformat(),
+            },
+            'stats': {
+                'days_active': days_active,
+                'favorite_category': favorite_category,
+                'books_read': len([r for r in user.rentals if r.returned_at is not None]),
+                'currently_reading': len([r for r in user.rentals if r.returned_at is None]),
+                'liked_articles_count': len(liked_articles),
+                'bookmarked_articles_count': len(bookmarked_articles)
+            },
+            'liked_articles': [article.to_dict() for article in liked_articles[:5]],  # Limit to 5 for preview
+            'bookmarked_articles': [article.to_dict() for article in bookmarked_articles[:5]]
+        }
+
+
