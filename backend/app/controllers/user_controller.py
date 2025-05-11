@@ -133,3 +133,17 @@ def delete_user(user_id):
         return jsonify({'error': 'User not found'}), 404
         
     return jsonify({'message': 'User deleted successfully'}), 200
+
+
+
+
+@user_controller.route('/user/profile', methods=['GET'])
+@jwt_required()
+def get_user_profile():
+    user_id = get_jwt_identity()
+    profile_data = UserService.get_user_profile(int(user_id))
+    
+    if not profile_data:
+        return jsonify({'error': 'User not found'}), 404
+    
+    return jsonify(profile_data), 200
