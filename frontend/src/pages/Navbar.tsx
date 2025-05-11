@@ -1,51 +1,75 @@
+import { useState, useRef, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Book, LogOut, Menu, X } from 'lucide-react';
+import { Book, LogOut, Menu, X, Search, FileText } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { useState } from 'react';
+import { createPortal } from 'react-dom';
 
 const Navbar = () => {
   const { user, isAuthenticated, logout } = useAuth();
   const navigate = useNavigate();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [searchDropdownOpen, setSearchDropdownOpen] = useState(false);
+  const [dropdownPos, setDropdownPos] = useState({ top: 0, left: 0 });
+  const [domReady, setDomReady] = useState(false);
+  const searchButtonRef = useRef<HTMLDivElement>(null);
+  const hideTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    setDomReady(true);
+    return () => setDomReady(false);
+  }, []);
 
   const handleLogout = () => {
     logout();
     navigate('/login');
   };
 
-  // Get user initials for the avatar
   const getInitials = (name: string) => {
     const names = name.trim().split(' ');
     const initials = names.map((n) => n.charAt(0).toUpperCase()).join('');
-    return initials.slice(0, 2); // Limit to 2 characters
+    return initials.slice(0, 2);
   };
 
-  const toggleMobileMenu = () => {
-    setMobileMenuOpen(!mobileMenuOpen);
-  };
+  const toggleMobileMenu = () => setMobileMenuOpen(!mobileMenuOpen);
 
   const handleProfileClick = () => {
     navigate('/profile');
     setMobileMenuOpen(false);
   };
 
+  const openSearchDropdown = () => {
+    if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current);
+
+    const button = searchButtonRef.current;
+    if (button) {
+      const rect = button.getBoundingClientRect();
+      setDropdownPos({
+        top: rect.bottom + window.scrollY,
+        left: rect.left + window.scrollX,
+      });
+      setSearchDropdownOpen(true);
+    }
+  };
+
+  const closeDropdownWithDelay = () => {
+    hideTimeoutRef.current = setTimeout(() => {
+      setSearchDropdownOpen(false);
+    }, 150);
+  };
+
   return (
-    <nav className="text-white bg-gradient-to-r from-gray-900/90 to-gray-800/90 backdrop-blur-md flex items-center justify-between p-4 px-8 lg:px-16 border-b border-gray-700/50 shadow-lg z-50">
+    <nav className="relative text-white bg-gradient-to-r from-gray-900/90 to-gray-800/90 backdrop-blur-md flex items-center justify-between p-4 px-8 lg:px-16 border-b border-gray-700/50 shadow-lg z-50">
       <div className="flex items-center gap-3">
         <Book className="h-7 w-7 text-amber-500" />
         <Link to="/" className="text-2xl font-bold tracking-tight bg-gradient-to-r from-amber-400 to-amber-600 bg-clip-text text-transparent">
           LMSENSA+
         </Link>
       </div>
-      
-      {/* Mobile menu button */}
-      <button 
-        className="md:hidden text-gray-300 hover:text-white"
-        onClick={toggleMobileMenu}
-      >
+
+      <button className="md:hidden text-gray-300 hover:text-white" onClick={toggleMobileMenu}>
         {mobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
       </button>
-      
+
       {/* Desktop Navigation */}
       <div className="hidden md:flex items-center gap-8">
         {isAuthenticated ? (
@@ -53,18 +77,57 @@ const Navbar = () => {
             <Link to="/" className="text-gray-200 font-medium hover:text-amber-400 transition-colors duration-300">
               Home
             </Link>
-            <Link to="/search" className="text-gray-200 font-medium hover:text-amber-400 transition-colors duration-300">
-              Search
-            </Link>
+
+            {/* Search Dropdown Hover Trigger */}
+            <div
+              ref={searchButtonRef}
+              onMouseEnter={openSearchDropdown}
+              onMouseLeave={closeDropdownWithDelay}
+              className="relative"
+            >
+              <button className="text-gray-200 font-medium hover:text-amber-400 transition-colors duration-300 flex items-center gap-1">
+                Search <span className="text-xs mt-1">▼</span>
+              </button>
+            </div>
+
+            {/* Portal Dropdown */}
+            {domReady && searchDropdownOpen && createPortal(
+              <div
+                onMouseEnter={openSearchDropdown}
+                onMouseLeave={closeDropdownWithDelay}
+                className="absolute py-2 w-48 bg-gray-800 rounded-md shadow-xl z-[9999] border border-gray-700"
+                style={{ position: 'absolute', top: `${dropdownPos.top}px`, left: `${dropdownPos.left}px` }}
+              >
+                <button
+                  onClick={() => {
+                    setSearchDropdownOpen(false);
+                    navigate('/search');
+                  }}
+                  className="flex items-center gap-2 px-4 py-2 text-sm text-gray-200 hover:bg-gray-700 hover:text-amber-400 w-full text-left"
+                >
+                  <Search size={16} />
+                  Search Books
+                </button>
+                <button
+                  onClick={() => {
+                    setSearchDropdownOpen(false);
+                    navigate('/articles');
+                  }}
+                  className="flex items-center gap-2 px-4 py-2 text-sm text-gray-200 hover:bg-gray-700 hover:text-amber-400 w-full text-left"
+                >
+                  <FileText size={16} />
+                  Browse Articles
+                </button>
+              </div>,
+              document.body
+            )}
+
             {user?.role === 'admin' && (
               <Link to="/admin" className="text-gray-200 font-medium hover:text-amber-400 transition-colors duration-300">
                 Admin
               </Link>
             )}
-            <div 
-              className="flex items-center gap-3 cursor-pointer hover:opacity-80 transition-opacity"
-              onClick={handleProfileClick}
-            >
+            <div onClick={handleProfileClick} className="flex items-center gap-3 cursor-pointer hover:opacity-80 transition-opacity">
               <div className="bg-gradient-to-br from-teal-500 to-teal-600 rounded-full h-9 w-9 flex items-center justify-center text-white font-medium text-sm border border-teal-400/50 shadow-md">
                 {user ? getInitials(user.name) : '??'}
               </div>
@@ -89,71 +152,56 @@ const Navbar = () => {
           </>
         )}
       </div>
-      
-      {/* Mobile Navigation Menu */}
-      {mobileMenuOpen && (
-        <div className="absolute top-full left-0 right-0 bg-gray-900/95 backdrop-blur-md border-b border-gray-700/50 shadow-lg p-4 flex flex-col space-y-4 md:hidden z-50">
+
+      {/* Mobile Navigation Portal */}
+      {mobileMenuOpen && domReady && createPortal(
+        <div className="fixed top-[60px] left-0 right-0 bg-gray-900/95 backdrop-blur-md border-b border-gray-700/50 shadow-lg p-4 flex flex-col space-y-4 md:hidden z-[9999]">
           {isAuthenticated ? (
             <>
-              <Link 
-                to="/" 
-                className="text-gray-200 font-medium hover:text-amber-400 transition-colors duration-300 p-2"
-                onClick={() => setMobileMenuOpen(false)}
-              >
+              <Link to="/" onClick={() => setMobileMenuOpen(false)} className="text-gray-200 font-medium hover:text-amber-400 transition-colors duration-300 p-2">
                 Home
               </Link>
-              <Link 
-                to="/search" 
-                className="text-gray-200 font-medium hover:text-amber-400 transition-colors duration-300 p-2"
-                onClick={() => setMobileMenuOpen(false)}
-              >
-                Search
-              </Link>
+              <div className="border-t border-gray-700 pt-2">
+                <div className="text-gray-400 text-xs uppercase tracking-wider px-2 mb-1">Search</div>
+                <Link to="/search" onClick={() => setMobileMenuOpen(false)} className="flex items-center gap-2 text-gray-200 font-medium hover:text-amber-400 transition-colors duration-300 p-2 pl-4">
+                  <Search size={16} />
+                  Search Books
+                </Link>
+                <Link to="/articles" onClick={() => setMobileMenuOpen(false)} className="flex items-center gap-2 text-gray-200 font-medium hover:text-amber-400 transition-colors duration-300 p-2 pl-4">
+                  <FileText size={16} />
+                  Browse Articles
+                </Link>
+              </div>
               {user?.role === 'admin' && (
-                <Link 
-                  to="/admin" 
-                  className="text-gray-200 font-medium hover:text-amber-400 transition-colors duration-300 p-2"
-                  onClick={() => setMobileMenuOpen(false)}
-                >
+                <Link to="/admin" onClick={() => setMobileMenuOpen(false)} className="text-gray-200 font-medium hover:text-amber-400 transition-colors duration-300 p-2">
                   Admin
                 </Link>
               )}
-              <div 
-                className="flex items-center gap-3 p-2 cursor-pointer"
-                onClick={handleProfileClick}
-              >
+              <div onClick={handleProfileClick} className="flex items-center gap-3 p-2 cursor-pointer">
                 <div className="bg-gradient-to-br from-teal-500 to-teal-600 rounded-full h-9 w-9 flex items-center justify-center text-white font-medium text-sm border border-teal-400/50 shadow-md">
                   {user ? getInitials(user.name) : '??'}
                 </div>
-                <span className="text-gray-200 font-medium">My Profile</span>
+                <span className="text-gray-200 font-medium">
+                  {user ? user.name : 'User'}
+                </span>
               </div>
-              <button
-                onClick={handleLogout}
-                className="flex items-center gap-3 text-gray-200 hover:text-amber-400 transition-colors duration-300 p-2"
-              >
+              <button onClick={handleLogout} className="flex items-center gap-3 text-gray-200 hover:text-amber-400 transition-colors duration-300 p-2">
                 <LogOut size={18} />
                 <span>Logout</span>
               </button>
             </>
           ) : (
             <>
-              <Link 
-                to="/login" 
-                className="text-gray-200 font-medium hover:text-amber-400 transition-colors duration-300 p-2"
-                onClick={() => setMobileMenuOpen(false)}
-              >
+              <Link to="/login" onClick={() => setMobileMenuOpen(false)} className="text-gray-200 font-medium hover:text-amber-400 transition-colors duration-300 p-2">
                 Login
               </Link>
-              <Link 
-                to="/register" 
-                className="text-gray-200 font-medium hover:text-amber-400 transition-colors duration-300 p-2"
-                onClick={() => setMobileMenuOpen(false)}
-              >
+              <Link to="/register" onClick={() => setMobileMenuOpen(false)} className="text-gray-200 font-medium hover:text-amber-400 transition-colors duration-300 p-2">
                 Register
               </Link>
             </>
           )}
-        </div>
+        </div>,
+        document.body
       )}
     </nav>
   );
