@@ -21,7 +21,7 @@ interface Article {
     avatarUrl?: string;
   };
   summary: string;
-  content: string;
+  pdfUrl: string;
   tags: string[];
   createdAt: string;
   updatedAt?: string;
@@ -327,10 +327,10 @@ const ArticlesPage: React.FC = () => {
             Library Articles
           </div>
           <h1 className="text-4xl md:text-6xl font-bold mb-4 bg-gradient-to-r from-white to-amber-300 bg-clip-text text-transparent">
-            Discover Insightful Articles
+            Discover Research Papers
           </h1>
           <p className="text-lg text-gray-300">
-            Expand your knowledge with our curated collection of articles on literature, research, and academic topics
+            Explore our collection of academic papers and research articles from various fields
           </p>
         </motion.div>
 
@@ -349,7 +349,7 @@ const ArticlesPage: React.FC = () => {
                 value={searchQuery}
                 onChange={handleSearchChange}
                 className="w-full bg-gray-800/70 backdrop-blur-md rounded-xl border border-gray-700 py-4 pl-12 pr-4 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent shadow-lg"
-                placeholder="Search articles by title, content, or author..."
+                placeholder="Search papers by title, summary, or author..."
               />
             </div>
             <button
@@ -498,7 +498,7 @@ const ArticlesPage: React.FC = () => {
           className="max-w-4xl mx-auto mb-6 flex justify-between items-center"
         >
           <h2 className="text-xl font-semibold text-white">
-            {isLoading ? 'Loading articles...' : `${totalCount} Articles found`}
+            {isLoading ? 'Loading papers...' : `${totalCount} Papers found`}
           </h2>
         </motion.div>
 
@@ -528,7 +528,7 @@ const ArticlesPage: React.FC = () => {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                 </svg>
               </div>
-              <h3 className="text-xl font-medium text-white mb-2">Error Loading Articles</h3>
+              <h3 className="text-xl font-medium text-white mb-2">Error Loading Papers</h3>
               <p className="text-gray-400">{error}</p>
               <button
                 onClick={() => window.location.reload()}
@@ -571,9 +571,9 @@ const ArticlesPage: React.FC = () => {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
                 </svg>
               </div>
-              <h3 className="text-2xl font-medium text-white mb-2">No Articles Found</h3>
+              <h3 className="text-2xl font-medium text-white mb-2">No Papers Found</h3>
               <p className="text-gray-400 max-w-md mx-auto mb-6">
-                We couldn't find any articles matching your search criteria. Try adjusting your filters or search terms.
+                We couldn't find any research papers matching your search criteria. Try adjusting your filters or search terms.
               </p>
               <button
                 onClick={clearFilters}
