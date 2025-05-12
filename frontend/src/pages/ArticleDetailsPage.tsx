@@ -1,19 +1,24 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import axios from 'axios';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
     ArrowLeft, Clock, Eye, Heart, Bookmark, Share2, Facebook, Twitter, Linkedin, 
-    ChevronUp, Tag, Calendar, Copy, List, X, Mail, ArrowRight,
-    Sparkles, AlertCircle
+    ChevronUp, Tag, Calendar, Copy, X, Mail, ArrowRight, Download,
+    Sparkles, AlertCircle, FileText, ChevronLeft, ChevronRight, ZoomIn, ZoomOut
 } from 'lucide-react';
 import BackgroundWrapper from '@/components/ui/BackgroundWrapper';
+import SummaryModal from '@/components/catalog/SummaryModal';
 import { useAuth } from '../context/AuthContext';
-import ReactMarkdown from 'react-markdown';
-import type { Components } from 'react-markdown';
 import { toast } from 'react-toastify';
+import { Document, Page, pdfjs } from 'react-pdf';
+import 'react-pdf/dist/esm/Page/AnnotationLayer.css';
+import 'react-pdf/dist/esm/Page/TextLayer.css';
 
-// Define interfaces based on the requirements
+// Set up the worker for react-pdf
+pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.js';
+
+// Define interfaces
 interface Article {
     id: string;
     title: string;
@@ -25,7 +30,7 @@ interface Article {
         avatarUrl?: string;
     };
     summary: string;
-    content: string;
+    pdfUrl: string;
     tags: string[];
     createdAt: string;
     updatedAt?: string;
@@ -38,7 +43,6 @@ interface ArticleMeta {
     bookmarks: number;
 }
 
-// Combined type for article with meta
 interface ArticleWithMeta extends Article {
     meta: ArticleMeta;
 }
@@ -53,24 +57,6 @@ interface RelatedArticle {
     createdAt: string;
 }
 
-interface TOCItem {
-    id: string;
-    text: string;
-    level: number;
-}
-
-// Define custom renderers for ReactMarkdown with proper types
-type CustomRendererProps = {
-    children?: React.ReactNode;
-    node?: any;
-    className?: string;
-    href?: string;
-    src?: string;
-    alt?: string;
-    inline?: boolean;
-    [key: string]: any;
-};
-
 const ArticleDetailsPage: React.FC = () => {
     const { slug } = useParams<{ slug: string }>();
     const [article, setArticle] = useState<ArticleWithMeta | null>(null);
@@ -79,22 +65,31 @@ const ArticleDetailsPage: React.FC = () => {
     const [showShareOptions, setShowShareOptions] = useState<boolean>(false);
     const [isLiked, setIsLiked] = useState<boolean>(false);
     const [isBookmarked, setIsBookmarked] = useState<boolean>(false);
-    const [isActionLoading, setIsActionLoading] = useState<boolean>(false); // New state for debouncing
+    const [isActionLoading, setIsActionLoading] = useState<boolean>(false);
     const [showScrollTop, setShowScrollTop] = useState<boolean>(false);
     const [readingProgress, setReadingProgress] = useState<number>(0);
-    const [activeHeading, setActiveHeading] = useState<string>('');
     const [relatedArticles, setRelatedArticles] = useState<RelatedArticle[]>([]);
-    const [showTOC, setShowTOC] = useState<boolean>(false);
     const [copySuccess, setCopySuccess] = useState<boolean>(false);
     const [copyCompleteTimeout, setCopyCompleteTimeout] = useState<NodeJS.Timeout | null>(null);
     
+    // PDF viewing states
+    const [numPages, setNumPages] = useState<number | null>(null);
+    const [pageNumber, setPageNumber] = useState<number>(1);
+    const [scale, setScale] = useState<number>(1.0);
+    const [pdfError, setPdfError] = useState<string | null>(null);
+    const [isPdfLoading, setIsPdfLoading] = useState<boolean>(true);
+    const [pdfBlobUrl, setPdfBlobUrl] = useState<string | null>(null);
+
+    // Summary modal state
+    const [isSummaryModalOpen, setIsSummaryModalOpen] = useState<boolean>(false);
+    
     const contentRef = useRef<HTMLDivElement>(null);
     const articleContainerRef = useRef<HTMLDivElement>(null);
-    const headingRefs = useRef<Record<string, HTMLElement | null>>({});
+    const pdfViewerRef = useRef<HTMLDivElement>(null);
     const { isAuthenticated, isLoading: isAuthLoading } = useAuth();
     const navigate = useNavigate();
 
-    // Check scroll position for showing scroll-to-top button and calculate reading progress
+    // Scroll handling for progress and scroll-to-top
     useEffect(() => {
         const handleScroll = () => {
             setShowScrollTop(window.scrollY > 500);
@@ -104,26 +99,13 @@ const ArticleDetailsPage: React.FC = () => {
                 const currentProgress = Math.min(100, Math.max(0, (window.scrollY / totalHeight) * 100));
                 setReadingProgress(currentProgress);
             }
-            
-            // Update active heading based on scroll position
-            if (headingRefs.current) {
-                const headings = Object.entries(headingRefs.current).filter(([, ref]) => ref !== null);
-                
-                for (let i = headings.length - 1; i >= 0; i--) {
-                    const [id, ref] = headings[i];
-                    if (ref && ref.getBoundingClientRect().top <= 100) {
-                        setActiveHeading(id);
-                        break;
-                    }
-                }
-            }
         };
         
         window.addEventListener('scroll', handleScroll);
         return () => window.removeEventListener('scroll', handleScroll);
     }, []);
 
-    // Close share options when clicking outside
+    // Close share options on outside click
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
             const target = event.target as Element;
@@ -133,7 +115,7 @@ const ArticleDetailsPage: React.FC = () => {
         };
         
         document.addEventListener('mousedown', handleClickOutside);
-        return () => document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
     }, [showShareOptions]);
 
     // Fetch article data
@@ -149,31 +131,20 @@ const ArticleDetailsPage: React.FC = () => {
             setIsLoading(true);
             try {
                 const token = localStorage.getItem('token');
-                if (!token) {
-                    throw new Error('No token found');
-                }
-
-                if (!slug) {
-                    throw new Error('Article slug is missing');
-                }
+                if (!token) throw new Error('No token found');
+                if (!slug) throw new Error('Article slug is missing');
 
                 const response = await axios.get(`/api/articles/${slug}`, {
-                    headers: {
-                        Authorization: `Bearer ${token}`,
-                    },
+                    headers: { Authorization: `Bearer ${token}` },
                 });
 
                 setArticle(response.data);
 
-                // Fetch user's like and bookmark status for this article
+                // Fetch like and bookmark status
                 try {
                     const [likesResponse, bookmarksResponse] = await Promise.all([
-                        axios.get('/api/user/likes', {
-                            headers: { Authorization: `Bearer ${token}` },
-                        }),
-                        axios.get('/api/user/bookmarks', {
-                            headers: { Authorization: `Bearer ${token}` },
-                        }),
+                        axios.get('/api/user/likes', { headers: { Authorization: `Bearer ${token}` } }),
+                        axios.get('/api/user/bookmarks', { headers: { Authorization: `Bearer ${token}` } }),
                     ]);
                     setIsLiked(likesResponse.data.likedArticleIds.includes(response.data.id));
                     setIsBookmarked(bookmarksResponse.data.bookmarkedArticleIds.includes(response.data.id));
@@ -182,33 +153,22 @@ const ArticleDetailsPage: React.FC = () => {
                 }
 
                 setError(null);
-                
-                // Set document title
-                document.title = `${response.data.title} | LMSENSA+ Articles`;
+                document.title = `${response.data.title} | LMSENSA+ Research Papers`;
                 
                 // Fetch related articles
                 try {
                     const relatedResponse = await axios.get(`/api/articles/related/${response.data.id}`, {
-                        headers: {
-                            Authorization: `Bearer ${token}`,
-                        },
-                        params: {
-                            limit: 3,
-                            tags: response.data.tags.join(','),
-                            category: response.data.category
-                        }
+                        headers: { Authorization: `Bearer ${token}` },
+                        params: { limit: 3, tags: response.data.tags.join(','), category: response.data.category }
                     });
                     setRelatedArticles(relatedResponse.data.relatedArticles);
                 } catch (relatedError) {
                     console.error('Error fetching related articles:', relatedError);
-                    // Don't set error for related articles, it's not critical
                     setRelatedArticles([]);
                 }
             } catch (error: any) {
                 console.error('Error fetching article:', error.response?.data || error.message);
-                setError(error.response?.status === 404 
-                    ? 'Article not found' 
-                    : 'Failed to load the article. Please try again later.');
+                setError(error.response?.status === 404 ? 'Article not found' : 'Failed to load the article.');
                 setArticle(null);
                 setRelatedArticles([]);
             } finally {
@@ -219,153 +179,112 @@ const ArticleDetailsPage: React.FC = () => {
         fetchArticle();
     }, [slug, isAuthenticated, isAuthLoading, navigate]);
 
-    // Parse article content to extract headings for TOC
-    const tableOfContents = useMemo(() => {
-        if (!article) return [];
-        
-        const headingRegex = /^(#{1,3})\s+(.+)$/gm;
-        const toc: TOCItem[] = [];
-        let match;
-        
-        while ((match = headingRegex.exec(article.content)) !== null) {
-            const level = match[1].length;
-            const text = match[2].trim();
-            const id = text.toLowerCase().replace(/[^\w\s]/gi, '').replace(/\s+/g, '-');
-            
-            toc.push({ id, text, level });
-        }
-        
-        return toc;
+    // Fetch and create PDF blob URL
+    useEffect(() => {
+        const fetchPdf = async () => {
+            if (!article?.pdfUrl) return;
+
+            setIsPdfLoading(true);
+            setPdfError(null);
+
+            try {
+                const response = await fetch(`http://localhost:5050/proxy-pdf?url=${encodeURIComponent(article.pdfUrl)}`, {
+                    method: 'GET',
+                    headers: { 'Accept': 'application/pdf' }
+                });
+                if (!response.ok) throw new Error(`Failed to fetch PDF: ${response.statusText}`);
+
+                const blob = await response.blob();
+                const blobUrl = window.URL.createObjectURL(blob);
+                setPdfBlobUrl(blobUrl);
+            } catch (error: any) {
+                console.error('Error fetching PDF:', error);
+                setPdfError(`Failed to load PDF: ${error.message}`);
+            } finally {
+                setIsPdfLoading(false);
+            }
+        };
+
+        fetchPdf();
+
+        return () => {
+            if (pdfBlobUrl) window.URL.revokeObjectURL(pdfBlobUrl);
+        };
     }, [article]);
 
-    const handleBack = () => {
-        navigate('/articles');
-    };
+    const handleBack = () => navigate('/articles');
 
     const handleLikeToggle = async () => {
-      if (!article) return;
+        if (!article) return;
 
-      const wasLiked = isLiked;
-      setIsLiked(!wasLiked); // Optimistic UI update for like state
-      setArticle((prev) =>
-          prev
-              ? {
-                    ...prev,
-                    meta: {
-                        ...prev.meta,
-                        likes: wasLiked ? prev.meta.likes - 1 : prev.meta.likes + 1,
-                    },
-                }
-              : prev
-      ); // Optimistic UI update for like count
+        setIsActionLoading(true);
+        const wasLiked = isLiked;
+        setIsLiked(!wasLiked);
+        setArticle(prev => prev ? {
+            ...prev,
+            meta: { ...prev.meta, likes: wasLiked ? prev.meta.likes - 1 : prev.meta.likes + 1 }
+        } : prev);
 
-      try {
-          const token = localStorage.getItem('token');
-          const response = await axios.post(`/api/articles/${article.id}/like`, {}, {
-              headers: {
-                  Authorization: `Bearer ${token}`,
-              },
-          });
+        try {
+            const token = localStorage.getItem('token');
+            const response = await axios.post(`/api/articles/${article.id}/like`, {}, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
 
-          // Log response for debugging
-          console.log('Like response:', response.data);
-
-          toast.success(wasLiked ? 'Article unliked' : 'Article liked', {
-              position: 'bottom-center',
-              autoClose: 3000,
-          });
-      } catch (error: any) {
-          console.error('Error toggling like:', {
-              message: error.message,
-              response: error.response?.data,
-              status: error.response?.status,
-          });
-          setIsLiked(wasLiked); // Revert like status
-          setArticle((prev) =>
-              prev
-                  ? {
-                        ...prev,
-                        meta: {
-                            ...prev.meta,
-                            likes: wasLiked ? prev.meta.likes + 1 : prev.meta.likes - 1,
-                        },
-                    }
-                  : prev
-          ); // Revert like count
-          toast.error('Failed to update like status', {
-              position: 'bottom-center',
-              autoClose: 3000,
-          });
-      }
+            if (response.status !== 200) throw new Error('Failed to toggle like');
+            toast.success(wasLiked ? 'Article unliked' : 'Article liked', { position: 'bottom-center', autoClose: 3000 });
+        } catch (error: any) {
+            console.error('Error toggling like:', error);
+            setIsLiked(wasLiked);
+            setArticle(prev => prev ? {
+                ...prev,
+                meta: { ...prev.meta, likes: wasLiked ? prev.meta.likes + 1 : prev.meta.likes - 1 }
+            } : prev);
+            toast.error('Failed to update like status', { position: 'bottom-center', autoClose: 3000 });
+        } finally {
+            setIsActionLoading(false);
+        }
     };
 
     const handleBookmarkToggle = async () => {
         if (!article) return;
 
+        setIsActionLoading(true);
         const wasBookmarked = isBookmarked;
-        setIsBookmarked(!wasBookmarked); // Optimistic UI update for bookmark state
-        setArticle((prev) =>
-            prev
-                ? {
-                      ...prev,
-                      meta: {
-                          ...prev.meta,
-                          bookmarks: wasBookmarked ? prev.meta.bookmarks - 1 : prev.meta.bookmarks + 1,
-                      },
-                  }
-                : prev
-        ); // Optimistic UI update for bookmark count
+        setIsBookmarked(!wasBookmarked);
+        setArticle(prev => prev ? {
+            ...prev,
+            meta: { ...prev.meta, bookmarks: wasBookmarked ? prev.meta.bookmarks - 1 : prev.meta.bookmarks + 1 }
+        } : prev);
 
         try {
             const token = localStorage.getItem('token');
             const response = await axios.post(`/api/articles/${article.id}/bookmark`, {}, {
-                headers: {
-                    Authorization: `Bearer ${token}`,
-                },
+                headers: { Authorization: `Bearer ${token}` }
             });
 
-            // Log response for debugging
-            console.log('Bookmark response:', response.data);
-
-            toast.success(wasBookmarked ? 'Bookmark removed' : 'Article bookmarked', {
-                position: 'bottom-center',
-                autoClose: 3000,
-            });
+            if (response.status !== 200) throw new Error('Failed to toggle bookmark');
+            toast.success(wasBookmarked ? 'Bookmark removed' : 'Article bookmarked', { position: 'bottom-center', autoClose: 3000 });
         } catch (error: any) {
-            console.error('Error toggling bookmark:', {
-                message: error.message,
-                response: error.response?.data,
-                status: error.response?.status,
-            });
-            setIsBookmarked(wasBookmarked); // Revert bookmark status
-            setArticle((prev) =>
-                prev
-                    ? {
-                          ...prev,
-                          meta: {
-                              ...prev.meta,
-                              bookmarks: wasBookmarked ? prev.meta.bookmarks + 1 : prev.meta.bookmarks - 1,
-                          },
-                      }
-                    : prev
-            ); // Revert bookmark count
-            toast.error('Failed to update bookmark status', {
-                position: 'bottom-center',
-                autoClose: 3000,
-            });
+            console.error('Error toggling bookmark:', error);
+            setIsBookmarked(wasBookmarked);
+            setArticle(prev => prev ? {
+                ...prev,
+                meta: { ...prev.meta, bookmarks: wasBookmarked ? prev.meta.bookmarks + 1 : prev.meta.bookmarks - 1 }
+            } : prev);
+            toast.error('Failed to update bookmark status', { position: 'bottom-center', autoClose: 3000 });
+        } finally {
+            setIsActionLoading(false);
         }
     };
 
-    const handleShareToggle = () => {
-        setShowShareOptions(!showShareOptions);
-    };
+    const handleShareToggle = () => setShowShareOptions(!showShareOptions);
 
     const handleShare = (platform: string) => {
         const url = window.location.href;
-        const title = article?.title || 'LMSENSA+ Article';
+        const title = article?.title || 'LMSENSA+ Research Paper';
         
         let shareUrl = '';
-        
         switch (platform) {
             case 'facebook':
                 shareUrl = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}`;
@@ -377,20 +296,13 @@ const ArticleDetailsPage: React.FC = () => {
                 shareUrl = `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(url)}`;
                 break;
             case 'email':
-                shareUrl = `mailto:?subject=${encodeURIComponent(title)}&body=${encodeURIComponent(`Check out this article: ${url}`)}`;
+                shareUrl = `mailto:?subject=${encodeURIComponent(title)}&body=${encodeURIComponent(`Check out this research paper: ${url}`)}`;
                 break;
             case 'copy':
                 navigator.clipboard.writeText(url).then(() => {
                     setCopySuccess(true);
-                    
-                    if (copyCompleteTimeout) {
-                        clearTimeout(copyCompleteTimeout);
-                    }
-                    
-                    const timeout = setTimeout(() => {
-                        setCopySuccess(false);
-                    }, 2000);
-                    
+                    if (copyCompleteTimeout) clearTimeout(copyCompleteTimeout);
+                    const timeout = setTimeout(() => setCopySuccess(false), 2000);
                     setCopyCompleteTimeout(timeout);
                 });
                 setShowShareOptions(false);
@@ -403,205 +315,41 @@ const ArticleDetailsPage: React.FC = () => {
         setShowShareOptions(false);
     };
 
-    const scrollToTop = () => {
-        window.scrollTo({ top: 0, behavior: 'smooth' });
+    const handleDownloadPdf = () => {
+        if (article?.pdfUrl) window.open(article.pdfUrl, '_blank');
     };
 
-    const scrollToHeading = (id: string) => {
-        const element = headingRefs.current[id];
-        if (element) {
-            const offset = 80; // Adjust based on any fixed headers
-            const elementPosition = element.getBoundingClientRect().top + window.scrollY;
-            window.scrollTo({
-                top: elementPosition - offset,
-                behavior: 'smooth'
-            });
-            
-            // Highlight the heading briefly
-            element.classList.add('highlight-heading');
-            setTimeout(() => {
-                element.classList.remove('highlight-heading');
-            }, 1500);
-        }
-        
-        if (window.innerWidth < 768) {
-            setShowTOC(false);
-        }
-    };
+    const scrollToTop = () => window.scrollTo({ top: 0, behavior: 'smooth' });
 
-    // Function to format date
     const formatDate = (dateString: string) => {
         const options: Intl.DateTimeFormatOptions = { year: 'numeric', month: 'long', day: 'numeric' };
         return new Date(dateString).toLocaleDateString(undefined, options);
     };
 
-    // Custom renderer for markdown headings to add IDs for TOC
-    const customRenderers: Components = {
-        h1: ({ children }: CustomRendererProps) => {
-            const text = children?.toString() || '';
-            const id = text.toLowerCase().replace(/[^\w\s]/gi, '').replace(/\s+/g, '-');
-            
-            return (
-                <h1 
-                    id={id} 
-                    className="scroll-mt-24 font-bold text-3xl mt-8 mb-4 text-white relative group"
-                    ref={(el) => { headingRefs.current[id] = el; }}
-                >
-                    {children}
-                    <a 
-                        href={`#${id}`} 
-                        className="absolute -left-6 opacity-0 group-hover:opacity-100 transition-opacity text-amber-500"
-                        aria-label={`Link to ${text}`}
-                    >
-                        #
-                    </a>
-                </h1>
-            );
-        },
-        h2: ({ children }: CustomRendererProps) => {
-            const text = children?.toString() || '';
-            const id = text.toLowerCase().replace(/[^\w\s]/gi, '').replace(/\s+/g, '-');
-            
-            return (
-                <h2 
-                    id={id} 
-                    className="scroll-mt-24 font-bold text-2xl mt-8 mb-4 text-white relative group"
-                    ref={(el) => { headingRefs.current[id] = el; }}
-                >
-                    {children}
-                    <a 
-                        href={`#${id}`} 
-                        className="absolute -left-5 opacity-0 group-hover:opacity-100 transition-opacity text-amber-500"
-                        aria-label={`Link to ${text}`}
-                    >
-                        #
-                    </a>
-                </h2>
-            );
-        },
-        h3: ({ children }: CustomRendererProps) => {
-            const text = children?.toString() || '';
-            const id = text.toLowerCase().replace(/[^\w\s]/gi, '').replace(/\s+/g, '-');
-            
-            return (
-                <h3 
-                    id={id} 
-                    className="scroll-mt-24 font-bold text-xl mt-6 mb-3 text-white relative group"
-                    ref={(el) => { headingRefs.current[id] = el; }}
-                >
-                    {children}
-                    <a 
-                        href={`#${id}`} 
-                        className="absolute -left-5 opacity-0 group-hover:opacity-100 transition-opacity text-amber-500"
-                        aria-label={`Link to ${text}`}
-                    >
-                        #
-                    </a>
-                </h3>
-            );
-        },
-        p: ({ children }: CustomRendererProps) => (
-            <p className="mb-4 text-gray-200 leading-relaxed">{children}</p>
-        ),
-        ul: ({ children }: CustomRendererProps) => (
-            <ul className="mb-4 pl-8 list-disc text-gray-200 space-y-2">{children}</ul>
-        ),
-        ol: ({ children }: CustomRendererProps) => (
-            <ol className="mb-4 pl-8 list-decimal text-gray-200 space-y-2">{children}</ol>
-        ),
-        li: ({ children }: CustomRendererProps) => (
-            <li className="text-gray-200">{children}</li>
-        ),
-        blockquote: ({ children }: CustomRendererProps) => (
-            <blockquote className="pl-4 border-l-4 border-amber-500 my-4 italic text-gray-300 bg-gray-800/50 p-3 rounded-r">{children}</blockquote>
-        ),
-        code: ({ node, inline, className, children, ...props }: CustomRendererProps) => {
-            const match = /language-(\w+)/.exec(className || '');
-            return !inline ? (
-                <div className="relative group my-4">
-                    <div className="absolute right-2 top-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
-                        <button
-                            onClick={() => {
-                                navigator.clipboard.writeText(String(children).replace(/\n$/, ''));
-                                setCopySuccess(true);
-                                setTimeout(() => setCopySuccess(false), 2000);
-                            }}
-                            className="bg-gray-700 p-1 rounded hover:bg-gray-600 transition-colors"
-                            aria-label="Copy code"
-                        >
-                            <Copy className="h-4 w-4 text-gray-300" />
-                        </button>
-                    </div>
-                    <pre
-                        className={`${
-                            match ? 'language-' + match[1] : ''
-                        } rounded-lg p-4 bg-gray-900 text-gray-200 border border-gray-700 whitespace-pre-wrap break-words max-w-full`}
-                    >
-                        <code className={className} {...props}>
-                            {children}
-                        </code>
-                    </pre>
-                </div>
-            ) : (
-                <code className="bg-gray-800 text-amber-400 px-1 py-0.5 rounded text-sm" {...props}>
-                    {children}
-                </code>
-            );
-        },
-        a: ({ href, children }: CustomRendererProps) => {
-            if (!href) return <>{children}</>;
-            return (
-                <a 
-                    href={href} 
-                    target={href.startsWith('http') ? "_blank" : undefined}
-                    rel={href.startsWith('http') ? "noopener noreferrer" : undefined}
-                    className="text-amber-400 hover:text-amber-300 underline underline-offset-2 transition-colors"
-                >
-                    {children}
-                </a>
-            );
-        },
-        img: ({ src, alt }: CustomRendererProps) => {
-            if (!src) return null;
-            return (
-                <div className="my-6">
-                    <img 
-                        src={src} 
-                        alt={alt || 'Article image'} 
-                        className="rounded-lg shadow-lg max-w-full mx-auto border border-gray-700"
-                    />
-                    {alt && alt !== 'Article image' && (
-                        <p className="text-center text-gray-400 text-sm mt-2 italic">{alt}</p>
-                    )}
-                </div>
-            );
-        },
-        table: ({ children }: CustomRendererProps) => (
-            <div className="overflow-x-auto my-6">
-                <table className="min-w-full border border-gray-700 rounded-lg overflow-hidden">
-                    {children}
-                </table>
-            </div>
-        ),
-        thead: ({ children }: CustomRendererProps) => (
-            <thead className="bg-gray-700 text-white">{children}</thead>
-        ),
-        tbody: ({ children }: CustomRendererProps) => (
-            <tbody className="divide-y divide-gray-700">{children}</tbody>
-        ),
-        tr: ({ children }: CustomRendererProps) => (
-            <tr className="hover:bg-gray-800/50 transition-colors">{children}</tr>
-        ),
-        th: ({ children }: CustomRendererProps) => (
-            <th className="px-4 py-3 text-left font-medium">{children}</th>
-        ),
-        td: ({ children }: CustomRendererProps) => (
-            <td className="px-4 py-3 border-t border-gray-700">{children}</td>
-        ),
-        hr: () => (
-            <hr className="my-8 border-gray-700" />
-        )
+    // PDF handling functions
+    const onDocumentLoadSuccess = ({ numPages }: { numPages: number }) => {
+        setNumPages(numPages);
+        setIsPdfLoading(false);
+        setPdfError(null);
     };
+
+    const onDocumentLoadError = (error: Error) => {
+        console.error('Error loading PDF:', error);
+        setPdfError(`Failed to load PDF: ${error.message}`);
+        setIsPdfLoading(false);
+    };
+
+    const goToPrevPage = () => setPageNumber(prev => Math.max(1, prev - 1));
+    const goToNextPage = () => numPages && setPageNumber(prev => Math.min(numPages, prev + 1));
+    const handlePageInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+        const inputValue = event.target.value;
+        const page = parseInt(inputValue, 10);
+        if (!isNaN(page) && page >= 1 && numPages && page <= numPages) {
+            setPageNumber(page);
+        }
+    };
+    const zoomIn = () => setScale(prev => Math.min(prev + 0.25, 3));
+    const zoomOut = () => setScale(prev => Math.max(0.5, prev - 0.25));
 
     // Loading skeleton
     if (isLoading) {
@@ -624,20 +372,7 @@ const ArticleDetailsPage: React.FC = () => {
                             <div className="h-4 bg-gray-700 rounded w-full"></div>
                             <div className="h-4 bg-gray-700 rounded w-3/4"></div>
                         </div>
-                        <div className="flex flex-col md:flex-row gap-6">
-                            <div className="w-full md:w-2/3 space-y-4">
-                                <div className="h-5 bg-gray-700 rounded w-1/2"></div>
-                                <div className="h-40 bg-gray-700 rounded-lg w-full"></div>
-                                <div className="h-5 bg-gray-700 rounded w-3/4"></div>
-                                <div className="h-20 bg-gray-700 rounded-lg w-full"></div>
-                            </div>
-                            <div className="w-full md:w-1/3 space-y-4">
-                                <div className="h-6 bg-gray-700 rounded w-1/2"></div>
-                                <div className="h-32 bg-gray-700 rounded-lg w-full"></div>
-                                <div className="h-6 bg-gray-700 rounded w-1/3"></div>
-                                <div className="h-32 bg-gray-700 rounded-lg w-full"></div>
-                            </div>
-                        </div>
+                        <div className="h-64 bg-gray-700 rounded-lg w-full"></div>
                     </div>
                 </div>
             </BackgroundWrapper>
@@ -660,26 +395,21 @@ const ArticleDetailsPage: React.FC = () => {
                     </div>
                     <h2 className="text-3xl font-bold text-white mb-4">{error}</h2>
                     <p className="text-gray-400 mb-8 max-w-lg mx-auto">
-                        {error === 'Article not found' 
-                            ? "The article you're looking for doesn't exist or has been removed." 
-                            : "We're having trouble loading this article. Please try again later."
-                        }
+                        {error === 'Article not found' ? "The research paper doesn't exist or has been removed." : "We're having trouble loading this paper."}
                     </p>
                     <button 
                         onClick={handleBack}
-                        className="px-6 py-3 flex items-center mx-auto bg-amber-500 text-gray-900 rounded-lg hover:bg-amber-600 transition-colors duration-200 font-medium shadow-lg hover:shadow-amber-500/20"
+                        className="px-6 py-3 flex items-center mx-auto bg-amber-500 text-gray-900 rounded-lg hover:bg-amber-600 transition-colors font-medium shadow-lg hover:shadow-amber-500/20"
                     >
                         <ArrowLeft className="mr-2 h-5 w-5" />
-                        Back to Articles
+                        Back to Papers
                     </button>
                 </div>
             </BackgroundWrapper>
         );
     }
 
-    if (!article) {
-        return null;
-    }
+    if (!article) return null;
 
     return (
         <BackgroundWrapper>
@@ -700,113 +430,72 @@ const ArticleDetailsPage: React.FC = () => {
                 className="min-h-screen pb-20"
                 ref={articleContainerRef}
             >
-                {/* Hero Section with Cover Image */}
-                <div className="relative h-[500px] md:h-[600px] w-full">
-                    {/* Gradient overlay for better text visibility */}
+                {/* Hero Section */}
+                <div className="relative w-full pb-20">
                     <div className="absolute inset-0 bg-gradient-to-t from-gray-900 via-gray-900/80 to-transparent z-10"></div>
-                    
-                    {/* Cover image */}
-                    <img 
-                        src={article.coverImageUrl} 
+                    <img
+                        src={article.coverImageUrl}
                         alt={article.title}
-                        className="w-full h-full object-cover"
+                        className="w-full h-[400px] md:h-[500px] object-cover"
                     />
-                    
-                    {/* Content overlay */}
-                    <div className="absolute inset-0 z-20 flex flex-col justify-end p-6 md:p-12 max-w-5xl mx-auto">
+                    <div className="relative z-20 flex flex-col p-6 md:p-12 max-w-5xl mx-auto">
                         <motion.div
                             initial={{ y: 20, opacity: 0 }}
                             animate={{ y: 0, opacity: 1 }}
                             transition={{ delay: 0.2 }}
                         >
-                            <button 
+                            <button
                                 onClick={handleBack}
-                                className="inline-flex items-center text-gray-300 hover:text-white mb-6 transition-colors duration-200 group"
+                                className="inline-flex items-center text-gray-300 hover:text-white mb-6 transition-colors group z-30"
                             >
                                 <ArrowLeft className="mr-2 h-4 w-4 transition-transform group-hover:-translate-x-1" />
-                                Back to Articles
+                                Back to Papers
                             </button>
-                            <div className="flex flex-wrap items-center gap-3 mb-4">
-                                <span className="px-4 py-1.5 bg-gradient-to-r from-amber-500 to-amber-400 text-gray-900 text-xs font-medium rounded-full shadow-md">
+                            <div className="flex flex-wrap items-center gap-4 mb-6">
+                                <span className="px-4 py-2 bg-gradient-to-r from-amber-500 to-amber-400 text-gray-900 text-sm font-medium rounded-full shadow-md">
                                     {article.category}
                                 </span>
-                                <span className="flex items-center text-gray-300 text-sm backdrop-blur-sm bg-gray-900/30 px-3 py-1.5 rounded-full">
-                                    <Clock className="h-3.5 w-3.5 mr-1.5" />
-                                    {article.meta.readTime} min read
+                                <span className="flex items-center text-gray-300 text-sm font-medium backdrop-blur-sm bg-gray-900/50 px-4 py-2 rounded-full shadow-sm">
+                                    <Clock className="h-4 w-4 mr-2" />
+                                    {article.meta?.readTime ?? 'N/A'} min read
                                 </span>
-                                <span className="flex items-center text-gray-300 text-sm backdrop-blur-sm bg-gray-900/30 px-3 py-1.5 rounded-full">
-                                    <Eye className="h-3.5 w-3.5 mr-1.5" />
-                                    {article.meta.views} views
+                                <span className="flex items-center text-gray-300 text-sm font-medium backdrop-blur-sm bg-gray-900/50 px-4 py-2 rounded-full shadow-sm">
+                                    <Eye className="h-4 w-4 mr-2" />
+                                    {article.meta?.views ?? 'N/A'} views
+                                </span>
+                                <span className="flex items-center text-gray-300 text-sm font-medium backdrop-blur-sm bg-gray-900/50 px-4 py-2 rounded-full shadow-sm">
+                                    <FileText className="h-4 w-4 mr-2" />
+                                    PDF Paper
                                 </span>
                             </div>
-                            <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold text-white mb-6 leading-tight tracking-tight">
+                            <h1 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-bold text-white mb-6 leading-tight tracking-tight">
                                 {article.title}
                             </h1>
-                            <p className="text-xl md:text-2xl text-gray-200 mb-8 max-w-3xl font-light leading-relaxed">
-                                {article.summary}
-                            </p>
+                            <div>
+                                <p className="text-base sm:text-lg md:text-xl text-gray-200 mb-4 max-w-3xl font-light leading-relaxed line-clamp-3">
+                                    {article.summary}
+                                </p>
+                                <button
+                                    onClick={() => setIsSummaryModalOpen(true)}
+                                    className="text-amber-500 hover:text-amber-400 text-sm font-medium flex items-center transition-colors"
+                                >
+                                    Read Full Summary
+                                </button>
+                                <SummaryModal
+                                    isOpen={isSummaryModalOpen}
+                                    onClose={() => setIsSummaryModalOpen(false)}
+                                    title={article.title}
+                                    coverImageUrl={article.coverImageUrl}
+                                    category={article.category}
+                                    summary={article.summary}
+                                />
+                            </div>
                         </motion.div>
                     </div>
                 </div>
 
-                {/* Table of Contents toggle for mobile */}
-                <div className="md:hidden fixed top-3 right-3 z-40">
-                    <button
-                        onClick={() => setShowTOC(!showTOC)}
-                        className="p-2 rounded-full bg-gray-800/90 backdrop-blur-sm shadow-lg border border-gray-700 text-gray-200 hover:text-amber-400 transition-colors"
-                        aria-label={showTOC ? "Close table of contents" : "Open table of contents"}
-                    >
-                        {showTOC ? <X className="h-5 w-5" /> : <List className="h-5 w-5" />}
-                    </button>
-                </div>
-
-                {/* Mobile TOC Overlay */}
-                <AnimatePresence>
-                    {showTOC && (
-                        <motion.div
-                            initial={{ opacity: 0, x: 300 }}
-                            animate={{ opacity: 1, x: 0 }}
-                            exit={{ opacity: 0, x: 300 }}
-                            transition={{ type: 'spring', damping: 20 }}
-                            className="fixed inset-0 z-30 md:hidden"
-                        >
-                            <div className="absolute inset-0 bg-gray-900/50 backdrop-blur-sm" onClick={() => setShowTOC(false)}></div>
-                            <div className="absolute right-0 top-0 h-full w-4/5 max-w-xs bg-gray-800 border-l border-gray-700 overflow-y-auto p-4 shadow-xl">
-                                <div className="flex items-center justify-between mb-4 pb-2 border-b border-gray-700">
-                                    <h3 className="text-white font-bold">Table of Contents</h3>
-                                    <button onClick={() => setShowTOC(false)} className="text-gray-400 hover:text-white">
-                                        <X className="h-5 w-5" />
-                                    </button>
-                                </div>
-                                
-                                {tableOfContents.length > 0 ? (
-                                    <ul className="space-y-2">
-                                        {tableOfContents.map((item) => (
-                                            <li 
-                                                key={item.id}
-                                                style={{ paddingLeft: `${(item.level - 1) * 0.75}rem` }}
-                                                className="relative"
-                                            >
-                                                <button
-                                                    onClick={() => scrollToHeading(item.id)}
-                                                    className={`block text-left w-full py-1.5 px-2 rounded transition-colors truncate hover:bg-gray-700 
-                                                    ${activeHeading === item.id ? 'text-amber-400 bg-gray-700/70 font-medium' : 'text-gray-300'}`}
-                                                >
-                                                    {item.text}
-                                                </button>
-                                            </li>
-                                        ))}
-                                    </ul>
-                                ) : (
-                                    <p className="text-gray-400 text-sm italic">No headings found in this article.</p>
-                                )}
-                            </div>
-                        </motion.div>
-                    )}
-                </AnimatePresence>
-
                 {/* Main Content */}
-                <div className="max-w-5xl mx-auto px-4 lg:px-8 -mt-20 relative z-20">
+                <div className="max-w-7xl mx-auto px-4 lg:px-8 -mt-20 relative z-20">
                     <motion.div
                         initial={{ y: 20, opacity: 0 }}
                         animate={{ y: 0, opacity: 1 }}
@@ -814,54 +503,41 @@ const ArticleDetailsPage: React.FC = () => {
                         className="relative"
                     >
                         <div className="flex flex-col md:flex-row gap-8 lg:gap-12">
-                            {/* Sidebar with TOC (desktop) */}
+                            {/* Sidebar */}
                             <div className="hidden md:block w-64 lg:w-72 shrink-0 top-24 self-start sticky">
                                 <div className="bg-gray-800/90 backdrop-blur-md rounded-xl shadow-xl p-6 border border-gray-700/50">
                                     <h3 className="text-lg font-medium text-white mb-4 flex items-center">
-                                        <List className="h-4 w-4 mr-2 text-amber-500" />
-                                        Table of Contents
+                                        <FileText className="h-4 w-4 mr-2 text-amber-500" />
+                                        PDF Document
                                     </h3>
-                                    
-                                    {tableOfContents.length > 0 ? (
-                                        <ul className="space-y-2">
-                                            {tableOfContents.map((item) => (
-                                                <li 
-                                                    key={item.id}
-                                                    style={{ paddingLeft: `${(item.level - 1) * 0.75}rem` }}
-                                                    className="relative"
-                                                >
-                                                    <button
-                                                        onClick={() => scrollToHeading(item.id)}
-                                                        className={`block text-left w-full py-1.5 px-2 rounded transition-colors truncate hover:bg-gray-700/70
-                                                        ${activeHeading === item.id ? 'text-amber-400 font-medium bg-gray-700/50' : 'text-gray-300'}`}
-                                                    >
-                                                        {activeHeading === item.id && (
-                                                            <motion.div
-                                                                layoutId="activeHeadingIndicator"
-                                                                className="absolute left-0 top-0 bottom-0 w-1 bg-amber-500 rounded-r"
-                                                                transition={{ type: 'spring', damping: 15 }}
-                                                            />
-                                                        )}
-                                                        {item.text}
-                                                    </button>
-                                                </li>
-                                            ))}
-                                        </ul>
-                                    ) : (
-                                        <p className="text-gray-400 text-sm italic">No headings found in this article.</p>
-                                    )}
-
-                                    {/* Article actions (desktop) */}
-                                    <div className="mt-8 pt-6 border-t border-gray-700/50">
+                                    <button
+                                        onClick={handleDownloadPdf}
+                                        className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-amber-500 hover:bg-amber-600 text-gray-900 font-medium rounded-lg transition-colors mb-6"
+                                    >
+                                        <Download className="h-4 w-4" />
+                                        Download PDF
+                                    </button>
+                                    <div className="mb-6 pb-6 border-b border-gray-700/50">
+                                        <p className="text-gray-300 text-sm mb-2">
+                                            <span className="text-gray-400">Category:</span> {article.category}
+                                        </p>
+                                        <p className="text-gray-300 text-sm mb-2">
+                                            <span className="text-gray-400">Published:</span> {formatDate(article.createdAt)}
+                                        </p>
+                                        {article.updatedAt && (
+                                            <p className="text-gray-300 text-sm">
+                                                <span className="text-gray-400">Updated:</span> {formatDate(article.updatedAt)}
+                                            </p>
+                                        )}
+                                    </div>
+                                    <div>
                                         <h4 className="text-white font-medium mb-4">Article Actions</h4>
                                         <div className="flex flex-col space-y-3">
                                             <button 
                                                 onClick={handleLikeToggle}
                                                 disabled={isActionLoading}
                                                 className={`flex items-center px-3 py-2 rounded-lg transition-colors
-                                                ${isLiked 
-                                                    ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30' 
-                                                    : 'text-gray-300 hover:bg-gray-700/60'}
+                                                ${isLiked ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30' : 'text-gray-300 hover:bg-gray-700/60'}
                                                 ${isActionLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
                                                 aria-label={isLiked ? "Unlike this article" : "Like this article"}
                                             >
@@ -869,14 +545,11 @@ const ArticleDetailsPage: React.FC = () => {
                                                 <span>{isLiked ? "Liked" : "Like"}</span>
                                                 <span className="ml-auto">{article.meta.likes}</span>
                                             </button>
-                                            
                                             <button 
                                                 onClick={handleBookmarkToggle}
                                                 disabled={isActionLoading}
                                                 className={`flex items-center px-3 py-2 rounded-lg transition-colors
-                                                ${isBookmarked 
-                                                    ? 'bg-amber-500/20 text-amber-400 hover:bg-amber-500/30' 
-                                                    : 'text-gray-300 hover:bg-gray-700/60'}
+                                                ${isBookmarked ? 'bg-amber-500/20 text-amber-400 hover:bg-amber-500/30' : 'text-gray-300 hover:bg-gray-700/60'}
                                                 ${isActionLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
                                                 aria-label={isBookmarked ? "Remove bookmark" : "Bookmark this article"}
                                             >
@@ -884,7 +557,6 @@ const ArticleDetailsPage: React.FC = () => {
                                                 <span>{isBookmarked ? "Bookmarked" : "Bookmark"}</span>
                                                 <span className="ml-auto">{article.meta.bookmarks}</span>
                                             </button>
-                                            
                                             <div className="relative" data-share-container>
                                                 <button 
                                                     onClick={handleShareToggle}
@@ -894,14 +566,9 @@ const ArticleDetailsPage: React.FC = () => {
                                                     <Share2 className="h-5 w-5 mr-3" />
                                                     <span>Share</span>
                                                     <span className="ml-auto">
-                                                        {showShareOptions ? (
-                                                            <X className="h-4 w-4" />
-                                                        ) : (
-                                                            <ChevronUp className="h-4 w-4 -rotate-90" />
-                                                        )}
+                                                        {showShareOptions ? <X className="h-4 w-4" /> : <ChevronUp className="h-4 w-4 -rotate-90" />}
                                                     </span>
                                                 </button>
-                                                
                                                 <AnimatePresence>
                                                     {showShareOptions && (
                                                         <motion.div 
@@ -911,38 +578,23 @@ const ArticleDetailsPage: React.FC = () => {
                                                             transition={{ type: 'spring', damping: 20 }}
                                                             className="absolute top-0 right-0 mt-2 bg-gray-800 rounded-lg shadow-xl py-2 z-10 border border-gray-700"
                                                         >
-                                                            <button 
-                                                                onClick={() => handleShare('facebook')}
-                                                                className="w-full text-left px-4 py-2 text-gray-300 hover:bg-gray-700 flex items-center"
-                                                            >
+                                                            <button onClick={() => handleShare('facebook')} className="w-full text-left px-4 py-2 text-gray-300 hover:bg-gray-700 flex items-center">
                                                                 <Facebook className="h-4 w-4 mr-3 text-blue-500" />
                                                                 Facebook
                                                             </button>
-                                                            <button 
-                                                                onClick={() => handleShare('twitter')}
-                                                                className="w-full text-left px-4 py-2 text-gray-300 hover:bg-gray-700 flex items-center"
-                                                            >
+                                                            <button onClick={() => handleShare('twitter')} className="w-full text-left px-4 py-2 text-gray-300 hover:bg-gray-700 flex items-center">
                                                                 <Twitter className="h-4 w-4 mr-3 text-blue-400" />
                                                                 Twitter
                                                             </button>
-                                                            <button 
-                                                                onClick={() => handleShare('linkedin')}
-                                                                className="w-full text-left px-4 py-2 text-gray-300 hover:bg-gray-700 flex items-center"
-                                                            >
+                                                            <button onClick={() => handleShare('linkedin')} className="w-full text-left px-4 py-2 text-gray-300 hover:bg-gray-700 flex items-center">
                                                                 <Linkedin className="h-4 w-4 mr-3 text-blue-600" />
                                                                 LinkedIn
                                                             </button>
-                                                            <button 
-                                                                onClick={() => handleShare('email')}
-                                                                className="w-full text-left px-4 py-2 text-gray-300 hover:bg-gray-700 flex items-center"
-                                                            >
+                                                            <button onClick={() => handleShare('email')} className="w-full text-left px-4 py-2 text-gray-300 hover:bg-gray-700 flex items-center">
                                                                 <Mail className="h-4 w-4 mr-3 text-gray-400" />
                                                                 Email
                                                             </button>
-                                                            <button 
-                                                                onClick={() => handleShare('copy')}
-                                                                className="w-full text-left px-4 py-2 text-gray-300 hover:bg-gray-700 flex items-center"
-                                                            >
+                                                            <button onClick={() => handleShare('copy')} className="w-full text-left px-4 py-2 text-gray-300 hover:bg-gray-700 flex items-center">
                                                                 <Copy className="h-4 w-4 mr-3 text-gray-400" />
                                                                 Copy Link
                                                             </button>
@@ -954,18 +606,18 @@ const ArticleDetailsPage: React.FC = () => {
                                     </div>
                                 </div>
                             </div>
-                            
+
                             {/* Main article content */}
                             <div className="w-full">
                                 <div className="bg-gray-800/90 backdrop-blur-md rounded-xl shadow-xl border border-gray-700/50">
-                                    {/* Author info and meta data */}
+                                    {/* Author info */}
                                     <div className="flex flex-col md:flex-row md:items-center justify-between px-6 md:px-10 py-6 border-b border-gray-700/70">
                                         <div className="flex items-center mb-4 md:mb-0">
                                             {article.author.avatarUrl ? (
                                                 <img 
                                                     src={article.author.avatarUrl} 
                                                     alt={article.author.name}
-                                                    className="h-14 w-14 rounded-full object-cover mr-4 border-2 border-amber-500 shadow-lg"
+                                                    className="h-14 w-14 rounded-full object-cover mr-4 border-2 border-amber-500 shadow-lg: shadow-lg"
                                                 />
                                             ) : (
                                                 <div className="h-14 w-14 rounded-full bg-gradient-to-br from-amber-500 to-amber-400 text-gray-900 flex items-center justify-center mr-4 text-xl font-bold border-2 border-amber-500 shadow-lg">
@@ -983,36 +635,31 @@ const ArticleDetailsPage: React.FC = () => {
                                                 </div>
                                             </div>
                                         </div>
-                                        
-                                        {/* Mobile action buttons */}
                                         <div className="flex items-center space-x-4 md:hidden">
                                             <button 
                                                 onClick={handleLikeToggle}
                                                 disabled={isActionLoading}
-                                                className={`flex items-center ${isLiked ? 'text-red-500' : 'text-gray-400 hover:text-red-500'} transition-colors duration-200 ${isActionLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                                className={`flex items-center ${isLiked ? 'text-red-500' : 'text-gray-400 hover:text-red-500'} transition-colors ${isActionLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
                                                 aria-label={isLiked ? "Unlike this article" : "Like this article"}
                                             >
                                                 <Heart className="h-6 w-6" fill={isLiked ? "currentColor" : "none"} />
                                             </button>
-                                            
                                             <button 
                                                 onClick={handleBookmarkToggle}
                                                 disabled={isActionLoading}
-                                                className={`flex items-center ${isBookmarked ? 'text-amber-500' : 'text-gray-400 hover:text-amber-500'} transition-colors duration-200 ${isActionLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                                className={`flex items-center ${isBookmarked ? 'text-amber-500' : 'text-gray-400 hover:text-amber-500'} transition-colors ${isActionLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
                                                 aria-label={isBookmarked ? "Remove bookmark" : "Bookmark this article"}
                                             >
                                                 <Bookmark className="h-6 w-6" fill={isBookmarked ? "currentColor" : "none"} />
                                             </button>
-                                            
                                             <div className="relative" data-share-container>
                                                 <button 
                                                     onClick={handleShareToggle}
-                                                    className="flex items-center text-gray-400 hover:text-amber-500 transition-colors duration-200"
+                                                    className="flex items-center text-gray-400 hover:text-amber-500 transition-colors"
                                                     aria-label="Share this article"
                                                 >
                                                     <Share2 className="h-6 w-6" />
                                                 </button>
-                                                
                                                 <AnimatePresence>
                                                     {showShareOptions && (
                                                         <motion.div 
@@ -1022,38 +669,23 @@ const ArticleDetailsPage: React.FC = () => {
                                                             transition={{ type: 'spring', damping: 20 }}
                                                             className="absolute right-0 mt-2 w-48 bg-gray-900 rounded-lg shadow-lg py-2 z-10 border border-gray-700"
                                                         >
-                                                            <button 
-                                                                onClick={() => handleShare('facebook')}
-                                                                className="w-full text-left px-4 py-2 text-gray-300 hover:bg-gray-800 flex items-center"
-                                                            >
+                                                            <button onClick={() => handleShare('facebook')} className="w-full text-left px-4 py-2 text-gray-300 hover:bg-gray-800 flex items-center">
                                                                 <Facebook className="h-4 w-4 mr-3 text-blue-500" />
                                                                 Facebook
                                                             </button>
-                                                            <button 
-                                                                onClick={() => handleShare('twitter')}
-                                                                className="w-full text-left px-4 py-2 text-gray-300 hover:bg-gray-800 flex items-center"
-                                                            >
+                                                            <button onClick={() => handleShare('twitter')} className="w-full text-left px-4 py-2 text-gray-300 hover:bg-gray-800 flex items-center">
                                                                 <Twitter className="h-4 w-4 mr-3 text-blue-400" />
                                                                 Twitter
                                                             </button>
-                                                            <button 
-                                                                onClick={() => handleShare('linkedin')}
-                                                                className="w-full text-left px-4 py-2 text-gray-300 hover:bg-gray-800 flex items-center"
-                                                            >
+                                                            <button onClick={() => handleShare('linkedin')} className="w-full text-left px-4 py-2 text-gray-300 hover:bg-gray-800 flex items-center">
                                                                 <Linkedin className="h-4 w-4 mr-3 text-blue-600" />
                                                                 LinkedIn
                                                             </button>
-                                                            <button 
-                                                                onClick={() => handleShare('email')}
-                                                                className="w-full text-left px-4 py-2 text-gray-300 hover:bg-gray-800 flex items-center"
-                                                            >
+                                                            <button onClick={() => handleShare('email')} className="w-full text-left px-4 py-2 text-gray-300 hover:bg-gray-800 flex items-center">
                                                                 <Mail className="h-4 w-4 mr-3 text-gray-400" />
                                                                 Email
                                                             </button>
-                                                            <button 
-                                                                onClick={() => handleShare('copy')}
-                                                                className="w-full text-left px-4 py-2 text-gray-300 hover:bg-gray-800 flex items-center"
-                                                            >
+                                                            <button onClick={() => handleShare('copy')} className="w-full text-left px-4 py-2 text-gray-300 hover:bg-gray-800 flex items-center">
                                                                 <Copy className="h-4 w-4 mr-3 text-gray-400" />
                                                                 Copy Link
                                                             </button>
@@ -1064,14 +696,104 @@ const ArticleDetailsPage: React.FC = () => {
                                         </div>
                                     </div>
                                     
-                                    {/* Article content */}
+                                    {/* PDF Viewer */}
                                     <div ref={contentRef} className="p-6 md:p-10">
-                                        <div className="prose prose-lg prose-invert prose-headings:text-white prose-headings:font-bold prose-headings:tracking-tight prose-p:text-gray-200 prose-p:leading-relaxed prose-strong:text-amber-400 prose-a:text-amber-400 prose-a:no-underline hover:prose-a:text-amber-300 prose-blockquote:border-l-amber-500 prose-blockquote:bg-gray-800/50 prose-blockquote:p-3 prose-blockquote:not-italic prose-blockquote:rounded-r prose-code:text-amber-400 prose-code:bg-gray-800 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:text-sm max-w-none">
-                                            <ReactMarkdown components={customRenderers}>{article.content}</ReactMarkdown>
+                                        <div className="mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                                            <h2 className="text-xl font-bold text-white">PDF Preview</h2>
+                                            <div className="flex items-center gap-2">
+                                                <button
+                                                    onClick={goToPrevPage}
+                                                    disabled={pageNumber <= 1}
+                                                    className="p-2 bg-gray-700 hover:bg-gray-600 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                                    aria-label="Previous page"
+                                                >
+                                                    <ChevronLeft className="h-5 w-5 text-gray-300" />
+                                                </button>
+                                                <input
+                                                    type="number"
+                                                    value={pageNumber}
+                                                    onChange={handlePageInputChange}
+                                                    min="1"
+                                                    max={numPages || 1}
+                                                    className="w-16 bg-gray-700 text-gray-300 text-center rounded-lg border border-gray-600 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                                                    aria-label="Go to page"
+                                                />
+                                                <span className="text-gray-300">of {numPages || '...'}</span>
+                                                <button
+                                                    onClick={goToNextPage}
+                                                    disabled={pageNumber >= (numPages || 1)}
+                                                    className="p-2 bg-gray-700 hover:bg-gray-600 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                                    aria-label="Next page"
+                                                >
+                                                    <ChevronRight className="h-5 w-5 text-gray-300" />
+                                                </button>
+                                                <button
+                                                    onClick={zoomOut}
+                                                    className="p-2 bg-gray-700 hover:bg-gray-600 rounded-lg transition-colors"
+                                                    aria-label="Zoom out"
+                                                >
+                                                    <ZoomOut className="h-5 w-5 text-gray-300" />
+                                                </button>
+                                                <span className="text-gray-300">{Math.round(scale * 100)}%</span>
+                                                <button
+                                                    onClick={zoomIn}
+                                                    className="p-2 bg-gray-700 hover:bg-gray-600 rounded-lg transition-colors"
+                                                    aria-label="Zoom in"
+                                                >
+                                                    <ZoomIn className="h-5 w-5 text-gray-300" />
+                                                </button>
+                                                <button
+                                                    onClick={handleDownloadPdf}
+                                                    className="md:hidden flex items-center justify-center gap-2 px-4 py-2 bg-amber-500 hover:bg-amber-600 text-gray-900 font-medium rounded-lg transition-colors"
+                                                >
+                                                    <Download className="h-4 w-4" />
+                                                    Download PDF
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <div ref={pdfViewerRef} className="pdf-container bg-gray-900 rounded-lg border border-gray-700 overflow-auto max-h-[80vh]">
+                                            {isPdfLoading && (
+                                                <div className="flex flex-col items-center justify-center py-16">
+                                                    <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-amber-500 mb-4"></div>
+                                                    <p className="text-gray-300">Loading PDF document...</p>
+                                                </div>
+                                            )}
+                                            {pdfError && (
+                                                <div className="flex flex-col items-center justify-center py-16 text-center px-4">
+                                                    <AlertCircle className="h-12 w-12 text-red-500 mb-4" />
+                                                    <h3 className="text-lg font-medium text-white mb-2">Failed to load PDF</h3>
+                                                    <p className="text-gray-400 mb-4">{pdfError}</p>
+                                                    <button
+                                                        onClick={handleDownloadPdf}
+                                                        className="flex items-center justify-center gap-2 px-4 py-2 bg-amber-500 hover:bg-amber-600 text-gray-900 font-medium rounded-lg transition-colors"
+                                                    >
+                                                        <Download className="h-4 w-4" />
+                                                        Download PDF
+                                                    </button>
+                                                </div>
+                                            )}
+                                            {pdfBlobUrl && !isPdfLoading && !pdfError && (
+                                                <div className="flex justify-center">
+                                                    <Document
+                                                        file={pdfBlobUrl}
+                                                        onLoadSuccess={onDocumentLoadSuccess}
+                                                        onLoadError={onDocumentLoadError}
+                                                        className="flex justify-center"
+                                                    >
+                                                        <Page
+                                                            pageNumber={pageNumber}
+                                                            scale={scale}
+                                                            renderTextLayer={true}
+                                                            renderAnnotationLayer={true}
+                                                            className="shadow-lg"
+                                                        />
+                                                    </Document>
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
 
-                                    {/* Tags and mobile actions */}
+                                    {/* Tags */}
                                     <div className="px-6 md:px-10 pt-4 pb-6 border-t border-gray-700/70">
                                         {article.tags.length > 0 && (
                                             <div className="mb-6">
@@ -1083,7 +805,7 @@ const ArticleDetailsPage: React.FC = () => {
                                                     {article.tags.map(tag => (
                                                         <span 
                                                             key={tag}
-                                                            className="px-3 py-1.5 bg-gray-700/60 hover:bg-gray-700 text-gray-300 rounded-full text-sm transition-colors duration-200 cursor-pointer"
+                                                            className="px-3 py-1.5 bg-gray-700/60 hover:bg-gray-700 text-gray-300 rounded-full text-sm transition-colors cursor-pointer"
                                                             onClick={() => navigate(`/articles?tag=${tag}`)}
                                                         >
                                                             {tag}
@@ -1092,8 +814,6 @@ const ArticleDetailsPage: React.FC = () => {
                                                 </div>
                                             </div>
                                         )}
-
-                                        {/* Mobile-only action bar */}
                                         <div className="md:hidden flex justify-between items-center pt-4 border-t border-gray-700/50">
                                             <div className="flex items-center space-x-2">
                                                 <span className="text-gray-400 text-sm">{article.meta.views} views</span>
@@ -1104,14 +824,13 @@ const ArticleDetailsPage: React.FC = () => {
                                     </div>
                                 </div>
 
-                                {/* Related articles section */}
+                                {/* Related articles */}
                                 {relatedArticles.length > 0 && (
                                     <div className="mt-10">
                                         <h3 className="text-2xl font-bold text-white mb-6 flex items-center">
                                             <Sparkles className="h-5 w-5 mr-2 text-amber-500" />
-                                            Related Articles
+                                            Related Papers
                                         </h3>
-                                        
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                             {relatedArticles.map(related => (
                                                 <motion.div
@@ -1134,7 +853,6 @@ const ArticleDetailsPage: React.FC = () => {
                                                                 </span>
                                                             </div>
                                                         </div>
-                                                        
                                                         <div className="p-4">
                                                             <h4 className="text-lg font-medium text-white mb-2 line-clamp-2 group-hover:text-amber-400 transition-colors">
                                                                 {related.title}
@@ -1147,7 +865,7 @@ const ArticleDetailsPage: React.FC = () => {
                                                                     {formatDate(related.createdAt)}
                                                                 </span>
                                                                 <span className="text-amber-500 text-sm font-medium flex items-center group-hover:translate-x-1 transition-transform">
-                                                                    Read more 
+                                                                    View paper 
                                                                     <ArrowRight className="ml-1 h-3.5 w-3.5" />
                                                                 </span>
                                                             </div>
@@ -1163,7 +881,7 @@ const ArticleDetailsPage: React.FC = () => {
                     </motion.div>
                 </div>
                 
-                {/* Success notification for copy link */}
+                {/* Copy link notification */}
                 <AnimatePresence>
                     {copySuccess && (
                         <motion.div
@@ -1178,13 +896,13 @@ const ArticleDetailsPage: React.FC = () => {
                     )}
                 </AnimatePresence>
                 
-                {/* Scroll to top button */}
+                {/* Scroll to top */}
                 <motion.button
                     initial={{ opacity: 0 }}
                     animate={{ opacity: showScrollTop ? 1 : 0 }}
                     transition={{ duration: 0.2 }}
                     onClick={scrollToTop}
-                    className={`fixed bottom-8 right-8 p-3 z-10 rounded-full bg-gradient-to-r from-amber-500 to-amber-400 text-gray-900 shadow-lg hover:bg-amber-600 transition-all duration-200 ${!showScrollTop && 'pointer-events-none'} hover:shadow-amber-500/20`}
+                    className={`fixed bottom-8 right-8 p-3 z-10 rounded-full bg-gradient-to-r from-amber-500 to-amber-400 text-gray-900 shadow-lg hover:bg-amber-600 transition-all ${!showScrollTop && 'pointer-events-none'} hover:shadow-amber-500/20`}
                     aria-label="Scroll to top"
                 >
                     <ChevronUp className="h-6 w-6" />
