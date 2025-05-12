@@ -20,7 +20,8 @@ from langgraph.graph import MessagesState
 from langgraph.prebuilt import ToolNode, tools_condition
 from langchain.chat_models import init_chat_model
 from pydantic import BaseModel, Field
-from typing import List, Optional
+from typing import List, Optional, Dict
+from datetime import datetime
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -41,12 +42,29 @@ class BookRecommendation(BaseModel):
     featured_book: bool = Field(description="Whether the book is featured")
     cover_url: Optional[str] = Field(default=None, description="URL of the book cover")
 
+class ArticleRecommendation(BaseModel):
+    article_id: int = Field(description="Unique ID of the article")
+    title: str = Field(description="Title of the article")
+    category: str = Field(description="Category of the article")
+    author: Dict = Field(description="Author information (name and avatar URL)")
+    summary: str = Field(description="Summary of the article")
+    pdf_url: str = Field(description="URL of the article PDF")
+    tags: List[str] = Field(description="Tags associated with the article")
+    created_at: str = Field(description="Creation date of the article in ISO format")
+    updated_at: Optional[str] = Field(description="Last update date of the article in ISO format")
+    cover_image_url: Optional[str] = Field(description="URL of the article cover image")
+    meta: Dict = Field(description="Metadata including read time, views, likes, and bookmarks")
+
 class ChatResponse(BaseModel):
     answer: str = Field(description="The chatbot's response to the user's query")
     follow_up_question: str = Field(description="A question to continue the conversation")
     recommended_books: Optional[List[BookRecommendation]] = Field(
         default=None,
         description="List of recommended books based on the query"
+    )
+    recommended_articles: Optional[List[ArticleRecommendation]] = Field(
+        default=None,
+        description="List of recommended articles based on the query"
     )
 
 class ChatBotTools:
@@ -72,64 +90,106 @@ class ChatBotTools:
             "cover_url": book.cover_url or None
         }
 
+    def _article_to_dict(self, article):
+        """Convert a SQLAlchemy Article to a dictionary."""
+        return {
+            "article_id": article.id,
+            "title": article.title or "Unknown",
+            "category": article.category or "Unknown",
+            "author": article.author.to_dict() if article.author else {"name": "Unknown", "avatarUrl": None},
+            "summary": article.summary or "No summary",
+            "pdf_url": article.pdf_url or "",
+            "tags": article.tags or [],
+            "created_at": article.created_at.isoformat() + 'Z' if article.created_at else "",
+            "updated_at": article.updated_at.isoformat() + 'Z' if article.updated_at else None,
+            "cover_image_url": article.cover_image_url or None,
+            "meta": article.meta.to_dict() if article.meta else {
+                "readTime": 5,
+                "views": 0,
+                "likes": 0,
+                "bookmarks": 0
+            }
+        }
+
     @tool(response_format="content_and_artifact")
     def retrieve(self, query: str):
-        """Retrieve books semantically similar to the query using the vector store."""
-        retrieved_docs = self.vector_store.similarity_search(query, k=3)
+        """Retrieve books and articles semantically similar to the query using the vector store."""
+        retrieved_docs = self.vector_store.similarity_search(query, k=6)
         books = []
+        articles = []
         for doc in retrieved_docs:
-            book_info = {
-                "book_id": int(doc.metadata.get("id", 0)),
+            item_type = doc.metadata.get("type", "unknown")
+            item_info = {
+                "id": int(doc.metadata.get("id", 0)),
                 "title": "Unknown",
-                "author": "Unknown",
                 "category": "Unknown",
-                "description": "No description",
-                "summary": "No summary",
-                "rating": 0.0,
-                "borrow_count": 0,
-                "total_books": 0,
-                "available_books": 0,
-                "featured_book": False,
-                "cover_url": None
+                "summary": "No summary"
             }
             lines = doc.page_content.split("\n")
             for line in lines:
                 line = line.strip()
                 if line.startswith("Title: "):
-                    book_info["title"] = line.replace("Title: ", "").strip()
-                elif line.startswith("Author: "):
-                    book_info["author"] = line.replace("Author: ", "").strip()
+                    item_info["title"] = line.replace("Title: ", "").strip()
                 elif line.startswith("Category: "):
-                    book_info["category"] = line.replace("Category: ", "").strip()
-                elif line.startswith("Description: "):
-                    book_info["description"] = line.replace("Description: ", "").strip()
+                    item_info["category"] = line.replace("Category: ", "").strip()
                 elif line.startswith("Summary: "):
-                    book_info["summary"] = line.replace("Summary: ", "").strip()
-                elif line.startswith("Rating: "):
-                    book_info["rating"] = float(line.replace("Rating: ", "").strip())
-                elif line.startswith("Borrow Count: "):
-                    book_info["borrow_count"] = int(line.replace("Borrow Count: ", "").strip())
-                elif line.startswith("Total Books: "):
-                    book_info["total_books"] = int(line.replace("Total Books: ", "").strip())
-                elif line.startswith("Available Books: "):
-                    book_info["available_books"] = int(line.replace("Available Books: ", "").strip())
-                elif line.startswith("Featured Book: "):
-                    book_info["featured_book"] = line.replace("Featured Book: ", "").strip().lower() == "true"
-                elif line.startswith("Cover URL: "):
-                    book_info["cover_url"] = line.replace("Cover URL: ", "").strip() or None
-            books.append(book_info)
+                    item_info["summary"] = line.replace("Summary: ", "").strip()
+                # Additional fields based on item type
+                if item_type == "book":
+                    if line.startswith("Author: "):
+                        item_info["author"] = line.replace("Author: ", "").strip()
+                    elif line.startswith("Description: "):
+                        item_info["description"] = line.replace("Description: ", "").strip()
+                    elif line.startswith("Rating: "):
+                        item_info["rating"] = float(line.replace("Rating: ", "").strip())
+                    elif line.startswith("Borrow Count: "):
+                        item_info["borrow_count"] = int(line.replace("Borrow Count: ", "").strip())
+                    elif line.startswith("Total Books: "):
+                        item_info["total_books"] = int(line.replace("Total Books: ", "").strip())
+                    elif line.startswith("Available Books: "):
+                        item_info["available_books"] = int(line.replace("Available Books: ", "").strip())
+                    elif line.startswith("Featured Book: "):
+                        item_info["featured_book"] = line.replace("Featured Book: ", "").strip().lower() == "true"
+                    elif line.startswith("Cover URL: "):
+                        item_info["cover_url"] = line.replace("Cover URL: ", "").strip() or None
+                elif item_type == "article":
+                    if line.startswith("Author: "):
+                        item_info["author"] = {"name": line.replace("Author: ", "").strip(), "avatarUrl": None}
+                    elif line.startswith("PDF URL: "):
+                        item_info["pdf_url"] = line.replace("PDF URL: ", "").strip()
+                    elif line.startswith("Tags: "):
+                        item_info["tags"] = eval(line.replace("Tags: ", "").strip()) if line.replace("Tags: ", "").strip() else []
+                    elif line.startswith("Created At: "):
+                        item_info["created_at"] = line.replace("Created At: ", "").strip()
+                    elif line.startswith("Updated At: "):
+                        item_info["updated_at"] = line.replace("Updated At: ", "").strip() or None
+                    elif line.startswith("Cover Image URL: "):
+                        item_info["cover_image_url"] = line.replace("Cover Image URL: ", "").strip() or None
+                    elif line.startswith("Meta: "):
+                        item_info["meta"] = eval(line.replace("Meta: ", "").strip()) if line.replace("Meta: ", "").strip() else {
+                            "readTime": 5,
+                            "views": 0,
+                            "likes": 0,
+                            "bookmarks": 0
+                        }
+            if item_type == "book":
+                books.append(item_info)
+            elif item_type == "article":
+                articles.append(item_info)
         serialized = "\n\n".join(
-            (f"Title: {doc.metadata['title']}\nContent: {doc.page_content}")
+            (f"Title: {doc.metadata['title']}\nType: {doc.metadata['type']}\nContent: {doc.page_content}")
             for doc in retrieved_docs
         )
-        return serialized, books
+        return serialized, {"books": books, "articles": articles}
 
     @tool
     def get_all_categories(self):
-        """Retrieve all unique book categories from the database."""
+        """Retrieve all unique book and article categories from the database."""
         with self.app.app_context():
-            categories = db.session.query(Book).distinct().all()
-            return [category[0] for category in categories if category[0]]
+            book_categories = db.session.query(Book.category).distinct().all()
+            article_categories = db.session.query(Article.category).distinct().all()
+            categories = set([cat[0] for cat in book_categories + article_categories if cat[0]])
+            return list(categories)
 
     @tool
     def count_books(self, category: str = None):
@@ -238,22 +298,67 @@ class ChatBotTools:
 
     @tool
     def hybrid_search(self, query: str, category: str = None):
-        """Combine semantic search with database filtering by category."""
+        """Combine semantic search with database filtering by category for books and articles."""
         retrieved_docs = self.vector_store.similarity_search(query, k=10)
         titles = [doc.metadata["title"] for doc in retrieved_docs]
         with self.app.app_context():
-            query = db.session.query(Book).filter(Book.title.in_(titles))
+            books = db.session.query(Book).filter(Book.title.in_(titles)).limit(3).all()
+            articles = db.session.query(Article).filter(Article.title.in_(titles)).limit(3).all()
+            results = {
+                "books": [self._book_to_dict(book) for book in books],
+                "articles": [self._article_to_dict(article) for article in articles]
+            }
             if category:
-                query = query.filter(Book.category == category)
-            books = query.limit(3).all()
-            return [self._book_to_dict(book) for book in books]
+                results["books"] = [b for b in results["books"] if b["category"] == category]
+                results["articles"] = [a for a in results["articles"] if a["category"] == category]
+            return results
+
+    @tool
+    def get_article_details(self, title: str):
+        """Retrieve full details of a specific article by title."""
+        with self.app.app_context():
+            article = db.session.query(Article).filter(Article.title.ilike(f"%{title}%")).first()
+            if article:
+                return self._article_to_dict(article)
+            return {"status": "Article not found"}
+
+    @tool
+    def filter_articles(self, category: str = None, author_name: str = None, min_read_time: int = None, min_likes: int = None):
+        """Filter articles by category, author name, minimum read time, or minimum likes."""
+        with self.app.app_context():
+            query = db.session.query(Article)
+            if category:
+                query = query.filter(Article.category == category)
+            if author_name:
+                query = query.join(ArticleAuthor).filter(ArticleAuthor.name.ilike(f"%{author_name}%"))
+            if min_read_time is not None:
+                query = query.join(ArticleMeta).filter(ArticleMeta.read_time >= min_read_time)
+            if min_likes is not None:
+                query = query.join(ArticleMeta).filter(ArticleMeta.likes_count >= min_likes)
+            articles = query.limit(3).all()
+            return [self._article_to_dict(article) for article in articles]
+
+    @tool
+    def search_articles_by_popularity(self, category: str = None, sort_by: str = "likes"):
+        """Retrieve articles sorted by popularity (likes or views), optionally filtered by category."""
+        with self.app.app_context():
+            query = db.session.query(Article).join(ArticleMeta)
+            if category:
+                query = query.filter(Article.category == category)
+            if sort_by == "likes":
+                query = query.order_by(ArticleMeta.likes_count.desc())
+            elif sort_by == "views":
+                query = query.order_by(ArticleMeta.views.desc())
+            articles = query.limit(3).all()
+            return [self._article_to_dict(article) for article in articles]
 
     def get_tools(self):
         """Return the list of tools."""
         return [
             self.retrieve, self.get_all_categories, self.count_books, self.filter_books,
             self.check_availability, self.get_featured_books, self.search_by_popularity,
-            self.borrow_book, self.reserve_book, self.get_book_details, self.hybrid_search
+            self.borrow_book, self.reserve_book, self.get_book_details, self.hybrid_search,
+            self.get_article_details, self.filter_articles, self.search_articles_by_popularity
         ]
 
 class ChatBot:
@@ -271,29 +376,47 @@ class ChatBot:
         self.app = app
         self.llm = init_chat_model("gpt-4o-mini", model_provider="openai")
         self.embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
-        self.vector_store = self.load_books_from_db()
+        self.vector_store = self.load_items_from_db()
         self.tools = ChatBotTools(self.app, self.vector_store, self.update_book_in_vector_store)
         self.graph = self.create_graph()
         self._initialized = True
 
-    def book_to_document(self, book):
-        """Convert a SQLAlchemy Book row to a LangChain Document."""
-        content = f"""
-        Title: {book.title or 'Unknown'}
-        Author: {book.author or 'Unknown'}
-        Category: {book.category or 'Unknown'}
-        Description: {book.description or 'No description'}
-        Summary: {book.summary or 'No summary'}
-        Rating: {book.rating or 0}
-        Borrow Count: {book.borrow_count or 0}
-        Total Books: {book.total_books or 0}
-        Available Books: {book.available_books or 0}
-        Featured Book: {book.featured_book or False}
-        Cover URL: {book.cover_url or ''}
-        """
+    def item_to_document(self, item, item_type: str):
+        """Convert a SQLAlchemy Book or Article to a LangChain Document."""
+        if item_type == "book":
+            content = f"""
+            Title: {item.title or 'Unknown'}
+            Author: {item.author or 'Unknown'}
+            Category: {item.category or 'Unknown'}
+            Description: {item.description or 'No description'}
+            Summary: {item.summary or 'No summary'}
+            Rating: {item.rating or 0}
+            Borrow Count: {item.borrow_count or 0}
+            Total Books: {item.total_books or 0}
+            Available Books: {item.available_books or 0}
+            Featured Book: {item.featured_book or False}
+            Cover URL: {item.cover_url or ''}
+            """
+            metadata = {"title": item.title or "Unknown", "id": str(item.id), "type": "book"}
+        elif item_type == "article":
+            content = f"""
+            Title: {item.title or 'Unknown'}
+            Author: {item.author.name if item.author else 'Unknown'}
+            Category: {item.category or 'Unknown'}
+            Summary: {item.summary or 'No summary'}
+            PDF URL: {item.pdf_url or ''}
+            Tags: {item.tags or []}
+            Created At: {item.created_at.isoformat() + 'Z' if item.created_at else ''}
+            Updated At: {item.updated_at.isoformat() + 'Z' if item.updated_at else ''}
+            Cover Image URL: {item.cover_image_url or ''}
+            Meta: {item.meta.to_dict() if item.meta else {'readTime': 5, 'views': 0, 'likes': 0, 'bookmarks': 0}}
+            """
+            metadata = {"title": item.title or "Unknown", "id": str(item.id), "type": "article"}
+        else:
+            raise ValueError("Invalid item_type")
         return Document(
             page_content=content.strip(),
-            metadata={"title": book.title or "Unknown", "id": str(book.id)}
+            metadata=metadata
         )
 
     def add_book_to_vector_store(self, book_id: int):
@@ -301,28 +424,52 @@ class ChatBot:
         with self.app.app_context():
             row = db.session.query(Book).get(book_id)
             if row:
-                doc = self.book_to_document(row)
+                doc = self.item_to_document(row, "book")
                 self.vector_store.add_documents([doc])
                 logger.info(f"Added book {book_id} to vector store.")
 
+    def add_article_to_vector_store(self, article_id: int):
+        """Add an article to the vector store by ID."""
+        with self.app.app_context():
+            row = db.session.query(Article).get(article_id)
+            if row:
+                doc = self.item_to_document(row, "article")
+                self.vector_store.add_documents([doc])
+                logger.info(f"Added article {article_id} to vector store.")
+
     def remove_book_from_vector_store(self, book_id: int):
         """Remove a book from the vector store by ID."""
-        self.vector_store.delete([str(book_id)])
+        self.vector_store.delete([f"book_{book_id}"])
         logger.info(f"Removed book {book_id} from vector store.")
+
+    def remove_article_from_vector_store(self, article_id: int):
+        """Remove an article from the vector store by ID."""
+        self.vector_store.delete([f"article_{article_id}"])
+        logger.info(f"Removed article {article_id} from vector store.")
 
     def update_book_in_vector_store(self, book_id: int):
         """Update a book in the vector store by ID."""
         with self.app.app_context():
             row = db.session.query(Book).get(book_id)
             if row:
-                self.vector_store.delete([str(book_id)])
-                doc = self.book_to_document(row)
+                self.vector_store.delete([f"book_{book_id}"])
+                doc = self.item_to_document(row, "book")
                 self.vector_store.add_documents([doc])
                 logger.info(f"Updated book {book_id} in vector store.")
 
-    def load_books_from_db(self):
-        """Load books from the database into the FAISS vector store."""
-        cache_path = "./books_vectorstore"
+    def update_article_in_vector_store(self, article_id: int):
+        """Update an article in the vector store by ID."""
+        with self.app.app_context():
+            row = db.session.query(Article).get(article_id)
+            if row:
+                self.vector_store.delete([f"article_{article_id}"])
+                doc = self.item_to_document(row, "article")
+                self.vector_store.add_documents([doc])
+                logger.info(f"Updated article {article_id} in vector store.")
+
+    def load_items_from_db(self):
+        """Load books and articles from the database into the FAISS vector store."""
+        cache_path = "./items_vectorstore"
         cache_index = f"{cache_path}/index.faiss"
         cache_metadata = f"{cache_path}/index.pkl"
 
@@ -343,13 +490,19 @@ class ChatBot:
         with self.app.app_context():
             try:
                 books = db.session.query(Book).all()
+                articles = db.session.query(Article).all()
             except Exception as e:
-                logger.error(f"Failed to query books from database: {e}")
+                logger.error(f"Failed to query items from database: {e}")
                 return FAISS.from_documents([], embedding=self.embeddings)
 
             docs = []
             for book in books:
-                doc = self.book_to_document(book)
+                doc = self.item_to_document(book, "book")
+                doc.metadata["id"] = f"book_{book.id}"  # Unique ID for books
+                docs.append(doc)
+            for article in articles:
+                doc = self.item_to_document(article, "article")
+                doc.metadata["id"] = f"article_{article.id}"  # Unique ID for articles
                 docs.append(doc)
 
         splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
@@ -379,12 +532,12 @@ class ChatBot:
                 system_message = SystemMessage(
                     content=(
                         "You are a library assistant. Answer the user's query using the tool outputs and conversation history. "
-                        "Keep the answer short and avoid mentioning book recommendations or cover URLs in it. "
-                        "In the structured output, include up to 3 books from the tool outputs in recommended_books "
-                        "(with book_id, title, author, category, description, summary, rating, borrow_count, total_books, "
-                        "available_books, featured_book, cover_url). If no books are relevant, set recommended_books to null. "
+                        "Keep the answer short and avoid mentioning book or article recommendations or URLs in it. "
+                        "In the structured output, include up to 3 books and 3 articles from the tool outputs in "
+                        "recommended_books and recommended_articles respectively (with all relevant fields). "
+                        "If no items are relevant, set the respective field to null. "
                         "Generate a follow-up question that is relevant to the user's query or their previous responses "
-                        "(e.g., if they say 'yes' to a follow-up question, suggest related books or topics). "
+                        "(e.g., if they say 'yes' to a follow-up question, suggest related items or topics). "
                         "Use the conversation history to make the response and follow-up question context-aware.\n\n"
                         f"Tool Outputs:\n{docs_content}"
                     )
@@ -400,12 +553,14 @@ class ChatBot:
                 response = structured_llm.invoke(prompt)
 
                 logger.info(f"Recommended books: {response.recommended_books}")
+                logger.info(f"Recommended articles: {response.recommended_articles}")
                 logger.info(f"Follow-up question: {response.follow_up_question}")
 
                 return {
                     "messages": [AIMessage(content=response.answer, additional_kwargs={
                         "follow_up_question": response.follow_up_question,
-                        "recommended_books": response.recommended_books
+                        "recommended_books": response.recommended_books,
+                        "recommended_articles": response.recommended_articles
                     })]
                 }
             except Exception as e:
@@ -435,19 +590,24 @@ class ChatBot:
             last_message = step["messages"][-1]
             if last_message.type == "ai":
                 recommended_books = last_message.additional_kwargs.get("recommended_books", None)
+                recommended_articles = last_message.additional_kwargs.get("recommended_articles", None)
                 if recommended_books and not isinstance(recommended_books[0], BookRecommendation):
                     recommended_books = [BookRecommendation(**book) for book in recommended_books]
+                if recommended_articles and not isinstance(recommended_articles[0], ArticleRecommendation):
+                    recommended_articles = [ArticleRecommendation(**article) for article in recommended_articles]
                 final_response = ChatResponse(
                     answer=last_message.content,
                     follow_up_question=last_message.additional_kwargs.get("follow_up_question", ""),
-                    recommended_books=recommended_books
+                    recommended_books=recommended_books,
+                    recommended_articles=recommended_articles
                 )
 
         if not final_response:
             final_response = ChatResponse(
                 answer="Sorry, I couldn't process your request.",
                 follow_up_question="Can I help you with another query?",
-                recommended_books=None
+                recommended_books=None,
+                recommended_articles=None
             )
 
         return final_response.model_dump_json(indent=2)
