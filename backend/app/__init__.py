@@ -1,5 +1,6 @@
 from flask import Flask
 from flask_bcrypt import Bcrypt
+from flask_cors import CORS
 from flask_jwt_extended import JWTManager
 from app.db import db
 from flask_migrate import Migrate
@@ -36,6 +37,10 @@ def create_app():
     JWTManager(app)
     Migrate(app, db)
 
+
+    # Enable CORS for all routes
+    CORS(app, resources={r"/*": {"origins": "http://localhost:5173"}})  
+    
     logger.debug("Registering blueprints")
     app.register_blueprint(book_controller)
     app.register_blueprint(rental_request_controller)

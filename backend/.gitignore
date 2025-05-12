@@ -29,3 +29,8 @@ __pycache__/
 
 # Ignore instance folder
 instance/
+
+# Ignore the books vectorstore files
+*.pkl
+*.faiss
+
