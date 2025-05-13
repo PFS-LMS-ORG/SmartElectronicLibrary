@@ -15,38 +15,6 @@ chatbot_controller = Blueprint('chatbot_controller', __name__)
 @chatbot_controller.route('/message', methods=['POST'])
 @jwt_required()
 def process_message():
-    """
-    Process an incoming chat message and return a response.
-    
-    Expected request body:
-    {
-        "message": "User's message text",
-        "language": "en" | "fr" | "ar"
-    }
-    
-    Returns:
-    {
-        "response": "Chatbot's text response",
-        "language": "Language code",
-        "follow_up_question": "A follow-up question",
-        "recommended_books": [
-            {
-                "id": 1,
-                "title": "Book title",
-                "author": "Book author",
-                "category": "Book category",
-                "description": "Book description",
-                "summary": "Book summary",
-                "rating": 4.5,
-                "borrow_count": 10,
-                "total_books": 5,
-                "available_books": 3,
-                "featured_book": false,
-                "cover_url": "URL to book cover"
-            }
-        ]
-    }
-    """
     try:
         user_id = get_jwt_identity()
         data = request.get_json()
@@ -75,13 +43,15 @@ def process_message():
                 response_data = {
                     "answer": "Sorry, I couldn't process your request properly.",
                     "follow_up_question": "Can I help you with something else?",
-                    "recommended_books": None
+                    "recommended_books": None,
+                    "recommended_articles": None 
                 }
             
             # Extract data from the response
             answer = response_data.get("answer", "")
             follow_up_question = response_data.get("follow_up_question", "")
             recommended_books = response_data.get("recommended_books", [])
+            recommended_articles = response_data.get("recommended_articles", []) 
             
             # Combine answer and follow-up question for the main response
             combined_response = answer
@@ -92,34 +62,59 @@ def process_message():
             if recommended_books is None:
                 recommended_books = []
                 
+            # Ensure recommended_articles is a list
+            if recommended_articles is None:
+                recommended_articles = []
+                
             # Save the chat message to database
             chatbot_service._save_chat_message(
                 user_id=user_id,
                 message=message,
                 response=combined_response,
                 language=language,
-                book_recommendations=recommended_books
+                book_recommendations=recommended_books,
+                article_recommendations=recommended_articles
             )
             
+            # Format book recommendations
             if recommended_books:
-                formatted_recommendations = []
+                formatted_books = []
                 for book in recommended_books:
-                    formatted_recommendations.append({
-                        'id': book.get('id', 0),
+                    formatted_books.append({
+                        'id': book.get('book_id', 0),  # Changed from 'id' to 'book_id' to match model
                         'title': book.get('title', ''),
                         'author': book.get('author', ''),
                         'category': book.get('category', ''),
                         'rating': book.get('rating', 0),
                         'cover_url': book.get('cover_url', ''),
+                        'description': book.get('description', ''),  # Add more fields
+                        'available_books': book.get('available_books', 0),
                         'reason': ''
                     })
-                recommended_books = formatted_recommendations
+                recommended_books = formatted_books
+                
+            # Format article recommendations
+            if recommended_articles:
+                formatted_articles = []
+                for article in recommended_articles:
+                    formatted_articles.append({
+                        'id': article.get('article_id', 0),  # Changed from 'id' to 'article_id'
+                        'title': article.get('title', ''),
+                        'category': article.get('category', ''),
+                        'author': article.get('author', {}).get('name', '') if isinstance(article.get('author'), dict) else '',
+                        'summary': article.get('summary', ''),
+                        'pdf_url': article.get('pdf_url', ''),
+                        'cover_image_url': article.get('cover_image_url', ''),
+                        'reason': ''
+                    })
+                recommended_articles = formatted_articles
 
             return jsonify({
                 'response': combined_response,
                 'language': language,
                 'follow_up_question': follow_up_question,
-                'recommended_books': recommended_books
+                'recommended_books': recommended_books,
+                'recommended_articles': recommended_articles  # Add this line
             }), 200
             
         except Exception as e:
@@ -134,12 +129,14 @@ def process_message():
                 'response': fallback_response,
                 'language': language,
                 'follow_up_question': "",
-                'recommended_books': []
+                'recommended_books': [],
+                'recommended_articles': []  # Add this line
             }), 200
             
     except Exception as e:
         logger.error(f"Critical error in process_message: {str(e)}")
         return jsonify({'error': 'Server error processing message'}), 500
+
 
 @chatbot_controller.route('/history', methods=['GET'])
 @jwt_required()
@@ -154,6 +151,7 @@ def get_chat_history():
     except Exception as e:
         logger.error(f"Error fetching chat history: {str(e)}")
         return jsonify({'error': 'Server error fetching chat history'}), 500
+
 
 @chatbot_controller.route('/clear', methods=['POST'])
 @jwt_required()
@@ -176,7 +174,8 @@ def clear_chat_history():
         logger.error(f"Critical error in clear_chat_history: {str(e)}")
         logger.error(traceback.format_exc())
         return jsonify({'error': 'Server error clearing chat history'}), 500
-    
+
+
 @chatbot_controller.route('/refresh-vector-store', methods=['POST'])
 @jwt_required()
 def refresh_vector_store():
@@ -197,8 +196,7 @@ def refresh_vector_store():
         logger.error(traceback.format_exc())
         
         return jsonify({"error": str(e)}), 500
-    
-    
+
 @chatbot_controller.route('/health', methods=['GET'])
 def health_check():
     """
@@ -245,6 +243,6 @@ def health_check():
                 'error': str(e)
             }
         }), 500
-        
-        
-        
+
+
+
