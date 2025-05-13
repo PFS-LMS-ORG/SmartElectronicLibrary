@@ -1,9 +1,24 @@
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, Response, abort, jsonify, request
 from flask_jwt_extended import jwt_required, get_jwt_identity
+import requests
 from app.db import db
-from app.model import Article, ArticleAuthor, ArticleMeta, ArticleLike, ArticleBookmark
+from app.model.ArticleView import ArticleView
+from app.model.ArticleLike import ArticleLike
+from app.model.ArticleBookmark import ArticleBookmark
+from app.model.ArticleAuthor import ArticleAuthor
+from app.model.Article import Article
+from app.model.ArticleMeta import ArticleMeta
+from app.model.Article import Article
+
 from math import ceil
 from datetime import datetime
+from slugify import slugify
+import logging
+
+
+# Configure logging
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 
 article_controller = Blueprint('article_controller', __name__)
 
@@ -18,12 +33,13 @@ def get_articles():
 
     query = Article.query.join(ArticleAuthor)
 
-    # Search filter (by title or author name)
+    # Search filter (by title, author name, or summary)
     if search:
         query = query.filter(
             db.or_(
                 Article.title.ilike(f'%{search}%'),
                 ArticleAuthor.name.ilike(f'%{search}%'),
+                Article.summary.ilike(f'%{search}%'),
             )
         )
 
@@ -34,7 +50,6 @@ def get_articles():
     # Tag filter
     if tag:
         query = query.filter(Article.tags.like(f'%"{tag}"%'))
-
 
     # Pagination
     total_count = query.count()
@@ -49,16 +64,32 @@ def get_articles():
 @article_controller.route('/articles/<string:slug>', methods=['GET'])
 @jwt_required()
 def get_article_by_slug(slug):
+    user_id = get_jwt_identity()
+    if not user_id:
+        return jsonify({"error": "Unauthorized access"}), 401
+    
+    # Fetch the article by slug
     article = Article.query.filter_by(slug=slug).first()
     if article:
+        # Check if the user has already viewed this article
+        existing_view = ArticleView.query.filter_by(user_id=user_id, article_meta_id=article.meta.id).first()
+        if not existing_view:
+            # Record the view and increment the views count
+            view = ArticleView(user_id=user_id, article_meta_id=article.meta.id)
+            article.meta.views += 1
+            db.session.add(view)
+            db.session.commit()
+            
         return jsonify(article.to_dict()), 200
+    
+    
     return jsonify({"error": "Article not found"}), 404
 
 @article_controller.route('/articles', methods=['POST'])
 @jwt_required()
 def create_article():
     data = request.get_json()
-    if not data or not all(key in data for key in ["title", "content", "category", "author", "summary"]):
+    if not data or not all(key in data for key in ["title", "pdf_url", "category", "author", "summary"]):
         return jsonify({"error": "Missing required fields"}), 400
 
     # Handle author
@@ -72,12 +103,12 @@ def create_article():
     # Create article
     article = Article(
         title=data["title"],
-        slug=data["title"].lower().replace(" ", "-").replace("'", "").replace(",", ""),
+        slug=slugify(data["title"]),  # Using slugify for better slug generation
         cover_image_url=data.get("coverImageUrl", "https://placehold.co/600x300"),
         category=data["category"],
         author_id=author.id,
         summary=data["summary"],
-        content=data["content"],
+        pdf_url=data["pdf_url"],  # Changed from content to pdf_url
         tags=data.get("tags", []),
         created_at=datetime.utcnow()
     )
@@ -109,7 +140,7 @@ def update_article(slug):
         return jsonify({"error": "No data provided"}), 400
 
     # Update fields
-    for key in ["title", "content", "category", "summary", "tags", "cover_image_url"]:
+    for key in ["title", "pdf_url", "category", "summary", "tags", "cover_image_url"]:
         if key in data:
             setattr(article, key, data[key])
 
@@ -129,7 +160,7 @@ def update_article(slug):
         article.meta.bookmarks_count = data["meta"].get("bookmarks", article.meta.bookmarks_count)
 
     if "title" in data:
-        article.slug = data["title"].lower().replace(" ", "-").replace("'", "").replace(",", "")
+        article.slug = slugify(data["title"])
 
     article.updated_at = datetime.utcnow()
     db.session.commit()
@@ -231,8 +262,6 @@ def bookmark_article(id):
     db.session.commit()
     return jsonify({'message': 'Article bookmarked', 'bookmarks': article.meta.bookmarks_count}), 200
 
-
-
 @article_controller.route('/user/likes', methods=['GET'])
 @jwt_required()
 def get_user_likes():
@@ -248,3 +277,28 @@ def get_user_bookmarks():
     bookmarks = ArticleBookmark.query.filter_by(user_id=user_id).all()
     bookmarked_article_ids = [str(bookmark.article_id) for bookmark in bookmarks]
     return jsonify({'bookmarkedArticleIds': bookmarked_article_ids}), 200
+
+
+# Proxy endpoint to fetch PDFs from external URLs
+@article_controller.route('/proxy-pdf', methods=['GET'])
+def proxy_pdf():
+    pdf_url = request.args.get('url')
+    logger.debug(f"Received request for PDF URL: {pdf_url}")
+    if not pdf_url:
+        logger.error("PDF URL is missing")
+        abort(400, description="PDF URL is required")
+
+    try:
+        logger.debug(f"Fetching PDF from {pdf_url}")
+        response = requests.get(pdf_url, stream=True)
+        response.raise_for_status()
+        logger.debug(f"PDF fetched successfully, status code: {response.status_code}")
+
+        def generate():
+            for chunk in response.iter_content(chunk_size=8192):
+                yield chunk
+
+        return Response(generate(), content_type='application/pdf')
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Failed to fetch PDF: {str(e)}")
+        abort(500, description=f"Failed to fetch PDF: {str(e)}")
