@@ -53,7 +53,8 @@ class ChatBotService:
     
     # In ChatBotService.py
     def _save_chat_message(self, user_id: int, message: str, response: str, language: str, 
-                        book_recommendations: Optional[List] = None):
+                        book_recommendations: Optional[List] = None,
+                        article_recommendations: Optional[List] = None):
         try:
             
             from app.model.ChatMessage import ChatMessage
@@ -63,7 +64,8 @@ class ChatBotService:
                 message=message,
                 response=response,
                 language=language,
-                book_recommendations=json.dumps(book_recommendations) if book_recommendations else None
+                book_recommendations=json.dumps(book_recommendations) if book_recommendations else None,
+                article_recommendations=json.dumps(article_recommendations) if article_recommendations else None
             )
             db.session.add(new_chat)
             db.session.commit()
