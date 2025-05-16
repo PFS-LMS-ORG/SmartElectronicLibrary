@@ -38,20 +38,55 @@ class ChatBotService:
             
             # Call the ChatBot's chat_with_user method
             response = self.chatbot.chat_with_user(message, thread_id)
-            return response
             
+            # If it's already a JSON string, return it
+            if isinstance(response, str):
+                try:
+                    # Try to parse and validate the JSON
+                    response_data = json.loads(response)
+                    return response
+                except json.JSONDecodeError:
+                    # Not valid JSON, continue with processing
+                    pass
+                    
+            # Handle the case when response is a Python object
+            try:
+                if hasattr(response, "model_dump_json"):  # Pydantic v2
+                    # It's a Pydantic model
+                    return response.model_dump_json()
+                elif hasattr(response, "json"):  # Pydantic v1
+                    # It's a Pydantic model (older version)
+                    return response.json()
+                elif hasattr(response, "__dict__"):
+                    # It's a regular Python object
+                    return json.dumps(response.__dict__)
+                else:
+                    # Just try to convert it to JSON
+                    return json.dumps(response)
+            except Exception as e:
+                logger.error(f"Error converting response to JSON: {str(e)}")
+                
+                # Fallback to a simple structure
+                return json.dumps({
+                    "answer": str(response) if response else "I'm sorry, I encountered an error processing your request.",
+                    "follow_up_question": "Could you try again with a different question?",
+                    "recommended_books": None,
+                    "recommended_articles": None
+                })
+                
         except Exception as e:
             logger.error(f"Error in chat_with_user: {str(e)}")
             
-            # Return a fallback response in the expected format
-            fallback_response = {
+            # Return a fallback response
+            return json.dumps({
                 "answer": "I apologize, but I encountered an error processing your request.",
                 "follow_up_question": "Could you try again with a different question?",
-                "recommended_books": None
-            }
-            return json.dumps(fallback_response)
+                "recommended_books": None,
+                "recommended_articles": None
+            })
+        
     
-    # In ChatBotService.py
+    
     def _save_chat_message(self, user_id: int, message: str, response: str, language: str, 
                         book_recommendations: Optional[List] = None,
                         article_recommendations: Optional[List] = None):
@@ -100,8 +135,10 @@ class ChatBotService:
                 for msg in chat_messages:
                     try:
                         book_recommendations = json.loads(msg.book_recommendations) if msg.book_recommendations else []
+                        article_recommendations = json.loads(msg.article_recommendations) if msg.article_recommendations else []
                     except (json.JSONDecodeError, TypeError):
                         book_recommendations = []
+                        article_recommendations = []
                     
                     history.append({
                         'id': msg.id,
@@ -109,6 +146,7 @@ class ChatBotService:
                         'response': msg.response,
                         'language': msg.language,
                         'book_recommendations': book_recommendations,
+                        'article_recommendations': article_recommendations,
                         'created_at': msg.created_at.isoformat() if hasattr(msg.created_at, 'isoformat') else str(msg.created_at)
                     })
                 
