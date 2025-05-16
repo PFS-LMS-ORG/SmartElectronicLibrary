@@ -37,7 +37,7 @@ def process_message():
             
             # Try to parse the JSON response
             try:
-                response_data = json.loads(response_json)
+                response_data = json.loads(response_json) if isinstance(response_json, str) else response_json
             except Exception as e:
                 logger.error(f"Error parsing ChatBot response: {str(e)}")
                 response_data = {
@@ -53,60 +53,104 @@ def process_message():
             recommended_books = response_data.get("recommended_books", [])
             recommended_articles = response_data.get("recommended_articles", []) 
             
+            # Convert None values to empty lists
+            if recommended_books is None:
+                recommended_books = []
+                
+            if recommended_articles is None:
+                recommended_articles = []
+                
             # Combine answer and follow-up question for the main response
             combined_response = answer
             if follow_up_question:
                 combined_response += f"\n\n{follow_up_question}"
             
-            # Ensure recommended_books is a list
-            if recommended_books is None:
-                recommended_books = []
-                
-            # Ensure recommended_articles is a list
-            if recommended_articles is None:
-                recommended_articles = []
-                
             # Save the chat message to database
             chatbot_service._save_chat_message(
                 user_id=user_id,
                 message=message,
                 response=combined_response,
                 language=language,
-                book_recommendations=recommended_books,
-                article_recommendations=recommended_articles
+                book_recommendations=recommended_books,  # Pass the objects directly
+                article_recommendations=recommended_articles  # Pass the objects directly
             )
             
             # Format book recommendations
             if recommended_books:
                 formatted_books = []
                 for book in recommended_books:
-                    formatted_books.append({
-                        'id': book.get('book_id', 0),  # Changed from 'id' to 'book_id' to match model
+                    # Handle both dictionary and object formats
+                    if not isinstance(book, dict):
+                        # It's an object, convert to dict
+                        if hasattr(book, "__dict__"):
+                            book = book.__dict__
+                        elif hasattr(book, "model_dump"):  # Pydantic model
+                            book = book.model_dump()
+                        elif hasattr(book, "dict"):  # Older Pydantic
+                            book = book.dict()
+                    
+                    # Ensure all fields are present
+                    book_obj = {
+                        'id': book.get('book_id', 0),
                         'title': book.get('title', ''),
-                        'author': book.get('author', ''),
-                        'category': book.get('category', ''),
+                        'authors': book.get('authors', []),
+                        'categories': book.get('categories', []),
                         'rating': book.get('rating', 0),
                         'cover_url': book.get('cover_url', ''),
-                        'description': book.get('description', ''),  # Add more fields
+                        'description': book.get('description', ''),
+                        'summary': book.get('summary', ''),
                         'available_books': book.get('available_books', 0),
+                        'total_books': book.get('total_books', 0),
+                        'featured_book': book.get('featured_book', False),
+                        'borrow_count': book.get('borrow_count', 0),
                         'reason': ''
-                    })
+                    }
+                    formatted_books.append(book_obj)
                 recommended_books = formatted_books
                 
             # Format article recommendations
             if recommended_articles:
                 formatted_articles = []
                 for article in recommended_articles:
-                    formatted_articles.append({
-                        'id': article.get('article_id', 0),  # Changed from 'id' to 'article_id'
+                    # Handle both dictionary and object formats
+                    if not isinstance(article, dict):
+                        # It's an object, convert to dict
+                        if hasattr(article, "__dict__"):
+                            article = article.__dict__
+                        elif hasattr(article, "model_dump"):  # Pydantic model
+                            article = article.model_dump()
+                        elif hasattr(article, "dict"):  # Older Pydantic
+                            article = article.dict()
+                    
+                    # Handle author field
+                    author_info = article.get('author', {})
+                    if isinstance(author_info, dict):
+                        author_name = author_info.get('name', '')
+                        author_avatar = author_info.get('avatarUrl', '')
+                    else:
+                        author_name = str(author_info) if author_info else ''
+                        author_avatar = ''
+                    
+                    # Create the article object with all fields
+                    article_obj = {
+                        'id': article.get('article_id', 0),
                         'title': article.get('title', ''),
                         'category': article.get('category', ''),
-                        'author': article.get('author', {}).get('name', '') if isinstance(article.get('author'), dict) else '',
+                        'author': author_name,
+                        'author_avatar': author_avatar,
                         'summary': article.get('summary', ''),
                         'pdf_url': article.get('pdf_url', ''),
                         'cover_image_url': article.get('cover_image_url', ''),
+                        'tags': article.get('tags', []),
+                        'created_at': article.get('created_at', ''),
+                        'updated_at': article.get('updated_at', None),
+                        'read_time': article.get('meta', {}).get('readTime', 5) if article.get('meta') else 5,
+                        'views': article.get('meta', {}).get('views', 0) if article.get('meta') else 0,
+                        'likes': article.get('meta', {}).get('likes', 0) if article.get('meta') else 0,
+                        'bookmarks': article.get('meta', {}).get('bookmarks', 0) if article.get('meta') else 0,
                         'reason': ''
-                    })
+                    }
+                    formatted_articles.append(article_obj)
                 recommended_articles = formatted_articles
 
             return jsonify({
@@ -114,9 +158,9 @@ def process_message():
                 'language': language,
                 'follow_up_question': follow_up_question,
                 'recommended_books': recommended_books,
-                'recommended_articles': recommended_articles  # Add this line
+                'recommended_articles': recommended_articles
             }), 200
-            
+
         except Exception as e:
             # Log the full traceback for detailed debugging
             logger.error(f"Error processing chatbot message: {str(e)}")
@@ -136,6 +180,11 @@ def process_message():
     except Exception as e:
         logger.error(f"Critical error in process_message: {str(e)}")
         return jsonify({'error': 'Server error processing message'}), 500
+
+
+
+
+
 
 
 @chatbot_controller.route('/history', methods=['GET'])
