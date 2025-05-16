@@ -11,8 +11,8 @@ import logging
 from flask_jwt_extended import get_jwt_identity
 from flask_sqlalchemy import SQLAlchemy
 from langchain.schema import Document
-from langchain.vectorstores import FAISS
-from langchain.embeddings import HuggingFaceEmbeddings
+from langchain_community.vectorstores import FAISS
+from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_core.tools import tool
 from langchain_core.messages import SystemMessage, AIMessage, HumanMessage
@@ -23,6 +23,8 @@ from langgraph.prebuilt import ToolNode, tools_condition
 from langchain.chat_models import init_chat_model
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict
+
+import pydantic
 from app.model.Book import Book
 from app.model.Author import Author
 from app.model.Article import Article
@@ -139,24 +141,46 @@ class ChatBot:
 
     def _article_to_dict(self, article):
         """Convert a SQLAlchemy Article to a dictionary."""
-        return {
-            "article_id": article.id,
-            "title": article.title or "Unknown",
-            "category": article.category or "Unknown",
-            "author": article.author.to_dict() if article.author else {"name": "Unknown", "avatarUrl": None},
-            "summary": article.summary or "No summary",
-            "pdf_url": article.pdf_url or "",
-            "tags": article.tags or [],
-            "created_at": article.created_at.isoformat() + 'Z' if article.created_at else "",
-            "updated_at": article.updated_at.isoformat() + 'Z' if article.updated_at else None,
-            "cover_image_url": article.cover_image_url or None,
-            "meta": article.meta.to_dict() if article.meta else {
-                "readTime": 5,
-                "views": 0,
-                "likes": 0,
-                "bookmarks": 0
+        try:
+            return {
+                "article_id": article.id,
+                "title": article.title or "Unknown",
+                "category": article.category or "Unknown",
+                "author": {
+                    "name": article.author.name if hasattr(article, 'author') and article.author else "Unknown",
+                    "avatarUrl": article.author.avatar_url if hasattr(article, 'author') and article.author and hasattr(article.author, 'avatar_url') else None
+                },
+                "summary": article.summary or "No summary",
+                "pdf_url": article.pdf_url or "",
+                "tags": article.tags or [],
+                "created_at": article.created_at.isoformat() + 'Z' if article.created_at else "",
+                # Explicitly add the missing required fields
+                "updated_at": article.updated_at.isoformat() + 'Z' if hasattr(article, 'updated_at') and article.updated_at else None,
+                "cover_image_url": article.cover_image_url if hasattr(article, 'cover_image_url') else None,
+                "meta": {
+                    "readTime": article.meta.read_time if hasattr(article, 'meta') and hasattr(article.meta, 'read_time') else 5,
+                    "views": article.meta.views if hasattr(article, 'meta') and hasattr(article.meta, 'views') else 0,
+                    "likes": article.meta.likes_count if hasattr(article, 'meta') and hasattr(article.meta, 'likes_count') else 0,
+                    "bookmarks": article.meta.bookmarks_count if hasattr(article, 'meta') and hasattr(article.meta, 'bookmarks_count') else 0
+                }
             }
-        }
+        except Exception as e:
+            logger.error(f"Error in _article_to_dict: {e}", exc_info=True)
+            # Return a minimal valid dictionary that meets all Pydantic requirements
+            return {
+                "article_id": getattr(article, 'id', 0),
+                "title": getattr(article, 'title', "Unknown"),
+                "category": "Unknown",
+                "author": {"name": "Unknown", "avatarUrl": None},
+                "summary": "No summary available",
+                "pdf_url": "",
+                "tags": [],
+                "created_at": "",
+                "updated_at": None,  # Required field
+                "cover_image_url": None,  # Required field
+                "meta": {"readTime": 5, "views": 0, "likes": 0, "bookmarks": 0}
+            }
+    
     
     def get_tools(self):
         """Return the list of tools."""
@@ -165,8 +189,11 @@ class ChatBot:
         def retrieve(query: str):
             """Retrieve books and articles semantically similar to the query using the vector store."""
             try:
-                # Get documents from vector store
-                retrieved_docs = self.vector_store.similarity_search(query, k=8)
+                # Normalize and clean the query
+                clean_query = query.strip().lower()
+                
+                # Get documents from vector store with increased k for better coverage
+                retrieved_docs = self.vector_store.similarity_search(clean_query, k=12)
                 
                 # Handle case when no results are found
                 if not retrieved_docs:
@@ -678,6 +705,7 @@ class ChatBot:
                     logger.error(f"Debug Articles Error: {e}", exc_info=True)
                     return {"error": str(e)}
         
+        
         return [
             retrieve, get_all_categories, count_books, filter_books,
             check_availability, get_featured_books, search_by_popularity,
@@ -919,6 +947,8 @@ class ChatBot:
                 if not docs_content.strip():
                     docs_content = "No relevant information found in the database."
 
+                
+                
                 system_message = SystemMessage(
                     content=(
                         "You are YOA+, a library assistant for a specific library collection. ONLY respond with information that is explicitly "
@@ -927,19 +957,21 @@ class ChatBot:
                         "CRITICAL INSTRUCTIONS:\n"
                         "1. NEVER invent or hallucinate books or articles - only use what's in the database results.\n"
                         "2. If no relevant items are found in the database, clearly state this fact.\n"
-                        "3. EXTREMELY IMPORTANT: Your 'answer' field MUST ONLY contain a brief sentence like 'Here are some articles you might find interesting.' DO NOT include ANY article or book details such as titles, authors, or summaries in the main answer.\n"
-                        "4. All book details must ONLY appear in the recommended_books structured field.\n"
-                        "5. All article details must ONLY appear in the recommended_articles structured field.\n"
-                        "6. If the user asks for something not in the database, say 'I don't have that information in our library database.'\n"
-                        "7. NEVER generate fake article URLs, IDs, summaries, or any other details.\n\n"
+                        "3. EXTREMELY IMPORTANT: Keep your 'answer' field VERY CONCISE (2-3 sentences maximum) and NEVER include ANY book or article details (titles, authors, summaries) in the main answer.\n"
+                        "4. Your main answer should ONLY acknowledge the user's query and indicate if you found relevant items, like: 'Here are some books about JavaScript you might find interesting.' or 'I couldn't find any articles on that topic.'\n"
+                        "5. All book details must ONLY appear in the recommended_books structured field.\n"
+                        "6. All article details must ONLY appear in the recommended_articles structured field.\n"
+                        "7. If the user asks for something not in the database, say 'I don't have that information in our library database.'\n"
+                        "8. Make follow-up questions relevant to the user's query or the recommendations provided.\n\n"
                         
                         "RESPONSE FORMAT EXAMPLE:\n"
-                        "- Correct answer: 'I found some articles in our library collection that might interest you.'\n"
-                        "- WRONG answer: 'Here are some articles: 1. [Title] by [Author]...'\n\n"
+                        "- Correct answer: 'I found some books in our collection that match your interest in machine learning.'\n"
+                        "- WRONG answer: 'Here are some books: 1. \"Machine Learning Basics\" by John Smith...'\n\n"
                         
                         f"DATABASE SEARCH RESULTS:\n{docs_content}"
                     )
                 )
+                
                 
                 convo = [
                     msg for msg in state["messages"]
@@ -947,9 +979,47 @@ class ChatBot:
                 ]
 
                 prompt = [system_message] + convo
+                
                 structured_llm = self.llm.with_structured_output(ChatResponse, method="function_calling")
-                response = structured_llm.invoke(prompt)
+                try:
+                    response = structured_llm.invoke(prompt)
+                except pydantic.ValidationError as e:
+                    # Handle validation errors specifically
+                    logger.error(f"Validation error in generate: {e}")
+                    # Create a valid default response
+                    response = ChatResponse(
+                        answer="I found some information that might interest you in our library collection.",
+                        follow_up_question="Would you like to explore any specific topics?",
+                        recommended_books=None,
+                        recommended_articles=None
+                    )
+                except Exception as e:
+                    # Handle other errors
+                    logger.error(f"Error in structured output: {e}", exc_info=True)
+                    response = ChatResponse(
+                        answer="I'm sorry, I encountered an error while processing your request.",
+                        follow_up_question="Could you try asking in a different way?",
+                        recommended_books=None,
+                        recommended_articles=None
+                    )
 
+                # Before returning, make sure all fields are properly set
+                if response.recommended_books:
+                    for book in response.recommended_books:
+                        # Ensure all required fields are present
+                        if not hasattr(book, "updated_at") or book.updated_at is None:
+                            book.updated_at = None
+                        if not hasattr(book, "cover_url") or book.cover_url is None:
+                            book.cover_url = None
+                            
+                if response.recommended_articles:
+                    for article in response.recommended_articles:
+                        # Ensure all required fields are present
+                        if not hasattr(article, "updated_at") or article.updated_at is None:
+                            article.updated_at = None
+                        if not hasattr(article, "cover_image_url") or article.cover_image_url is None:
+                            article.cover_image_url = None
+                
                 logger.info(f"Recommended books: {response.recommended_books}")
                 logger.info(f"Recommended articles: {response.recommended_articles}")
                 logger.info(f"Follow-up question: {response.follow_up_question}")
@@ -960,6 +1030,12 @@ class ChatBot:
                         "recommended_books": response.recommended_books,
                         "recommended_articles": response.recommended_articles
                     })]
+                }
+                
+            except Exception as e:
+                logger.error(f"Error in generate: {e}", exc_info=True)
+                return {
+                    "messages": [AIMessage(content="I'm sorry, I encountered an error while processing your request. Please try a different question about our library collection.")]
                 }
                 
             except Exception as e:
@@ -1004,30 +1080,69 @@ class ChatBot:
                         # Validate and convert books
                         processed_books = None
                         if recommended_books:
-                            if isinstance(recommended_books, list) and recommended_books:
-                                try:
-                                    if not isinstance(recommended_books[0], BookRecommendation):
-                                        processed_books = [BookRecommendation(**book) for book in recommended_books]
-                                    else:
-                                        processed_books = recommended_books
-                                    logger.info(f"Successfully processed {len(processed_books)} book recommendations")
-                                except Exception as e:
-                                    logger.error(f"Error converting books: {e}", exc_info=True)
-                                    processed_books = None
+                            try:
+                                validated_books = []
+                                for book in recommended_books:
+                                    # Check if book has minimum required fields
+                                    if isinstance(book, dict) and 'title' in book:
+                                        # Ensure all required fields exist
+                                        book_obj = {
+                                            "book_id": book.get("book_id", 0),
+                                            "title": book.get("title", "Unknown"),
+                                            "authors": book.get("authors", ["Unknown"]),
+                                            "categories": book.get("categories", ["Unknown"]),
+                                            "description": book.get("description", "No description"),
+                                            "summary": book.get("summary", "No summary"),
+                                            "rating": float(book.get("rating", 0.0)),
+                                            "borrow_count": int(book.get("borrow_count", 0)),
+                                            "total_books": int(book.get("total_books", 0)),
+                                            "available_books": int(book.get("available_books", 0)),
+                                            "featured_book": bool(book.get("featured_book", False)),
+                                            "cover_url": book.get("cover_url", None)
+                                        }
+                                        validated_books.append(book_obj)
+                                processed_books = validated_books
+                            except Exception as e:
+                                logger.error(f"Error validating books: {e}", exc_info=True)
+                                processed_books = None
                         
                         # Validate and convert articles        
                         processed_articles = None
                         if recommended_articles:
-                            if isinstance(recommended_articles, list) and recommended_articles:
-                                try:
-                                    if not isinstance(recommended_articles[0], ArticleRecommendation):
-                                        processed_articles = [ArticleRecommendation(**article) for article in recommended_articles]
-                                    else:
-                                        processed_articles = recommended_articles
-                                    logger.info(f"Successfully processed {len(processed_articles)} article recommendations")
-                                except Exception as e:
-                                    logger.error(f"Error converting articles: {e}", exc_info=True)
-                                    processed_articles = None
+                            try:
+                                validated_articles = []
+                                for article in recommended_articles:
+                                    # Check if article has minimum required fields
+                                    if isinstance(article, dict) and 'title' in article:
+                                        # Ensure author is properly formatted
+                                        author_obj = article.get("author", {})
+                                        if not isinstance(author_obj, dict):
+                                            author_obj = {"name": str(author_obj), "avatarUrl": None}
+                                        
+                                        # Ensure meta is properly formatted
+                                        meta_obj = article.get("meta", {})
+                                        if not isinstance(meta_obj, dict):
+                                            meta_obj = {"readTime": 5, "views": 0, "likes": 0, "bookmarks": 0}
+                                        
+                                        article_obj = {
+                                            "article_id": article.get("article_id", 0),
+                                            "title": article.get("title", "Unknown"),
+                                            "category": article.get("category", "Unknown"),
+                                            "author": author_obj,
+                                            "summary": article.get("summary", "No summary"),
+                                            "pdf_url": article.get("pdf_url", ""),
+                                            "tags": article.get("tags", []),
+                                            "created_at": article.get("created_at", ""),
+                                            "updated_at": article.get("updated_at", None),
+                                            "cover_image_url": article.get("cover_image_url", None),
+                                            "meta": meta_obj
+                                        }
+                                        validated_articles.append(article_obj)
+                                processed_articles = validated_articles
+                            except Exception as e:
+                                logger.error(f"Error validating articles: {e}", exc_info=True)
+                                processed_articles = None
+                        
                         
                         final_response = ChatResponse(
                             answer=last_message.content,
