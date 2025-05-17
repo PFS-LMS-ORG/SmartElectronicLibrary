@@ -31,7 +31,15 @@ def get_articles():
     category = request.args.get('category', '').lower()
     tag = request.args.get('tag', '').lower()
 
-    query = Article.query.join(ArticleAuthor)
+    subquery = (
+    db.session.query(db.func.max(Article.id).label('id'))
+    .group_by(Article.title)
+    .subquery()
+    )
+
+    query = Article.query.join(subquery, Article.id == subquery.c.id).join(ArticleAuthor)
+    query = query.order_by(db.func.random())
+
 
     # Search filter (by title, author name, or summary)
     if search:
