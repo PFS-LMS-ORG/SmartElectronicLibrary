@@ -20,6 +20,7 @@ class ChatMessage(db.Model):
     language = db.Column(db.String(2), default="en")
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     book_recommendations = db.Column(db.Text, nullable=True)  # Store as JSON string
+    article_recommendations = db.Column(db.Text, nullable=True)  # Store as JSON string
     
     # Add relationship to User for easier querying
     user = db.relationship("User", back_populates="chat_messages")
