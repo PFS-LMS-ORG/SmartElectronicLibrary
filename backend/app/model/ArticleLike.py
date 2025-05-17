@@ -13,3 +13,10 @@ class ArticleLike(db.Model):
 
     def __repr__(self):
         return f"<ArticleLike user_id={self.user_id} article_id={self.article_id}>"
+    
+    def to_dict(self):
+        return {
+            'user_id': self.user_id,
+            'article_id': self.article_id,
+            'created_at': self.created_at.isoformat()
+        }

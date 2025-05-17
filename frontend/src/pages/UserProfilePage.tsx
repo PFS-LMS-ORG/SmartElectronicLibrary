@@ -592,21 +592,21 @@ const UserProfilePage: React.FC = () => {
                       </h3>
                       
                       {userProfile?.liked_articles && userProfile.liked_articles.length > 0 ? (
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
                           {userProfile.liked_articles.map(article => (
                             <Link 
                               key={article.id}
                               to={`/articles/${article.slug}`}
                               className="bg-gray-800/50 rounded-xl border border-gray-700/50 overflow-hidden hover:border-amber-700/30 transition-all duration-300 hover:shadow-amber-900/10 hover:shadow-lg hover:-translate-y-1"
                             >
-                              <div className="h-40 w-full overflow-hidden">
+                              <div className="h-20 w-full overflow-hidden">
                                 <img 
                                   src={article.coverImageUrl || 'https://placehold.co/600x300'} 
                                   alt={article.title}
                                   className="w-full h-full object-cover transition-transform duration-300 hover:scale-105"
                                 />
                               </div>
-                              <div className="p-4">
+                              <div className="p-2">
                                 <div className="text-xs font-medium text-amber-400 mb-2">{article.category}</div>
                                 <h4 className="text-white font-medium mb-2 line-clamp-2">{article.title}</h4>
                                 <p className="text-gray-400 text-sm line-clamp-3">{article.summary}</p>
@@ -637,21 +637,21 @@ const UserProfilePage: React.FC = () => {
                       </h3>
                       
                       {userProfile?.bookmarked_articles && userProfile.bookmarked_articles.length > 0 ? (
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
                           {userProfile.bookmarked_articles.map(article => (
                             <Link 
                               key={article.id}
                               to={`/articles/${article.slug}`}
                               className="bg-gray-800/50 rounded-xl border border-gray-700/50 overflow-hidden hover:border-amber-700/30 transition-all duration-300 hover:shadow-amber-900/10 hover:shadow-lg hover:-translate-y-1"
                             >
-                              <div className="h-40 w-full overflow-hidden">
+                              <div className="h-20 w-full overflow-hidden">
                                 <img 
                                   src={article.coverImageUrl || 'https://placehold.co/600x300'} 
                                   alt={article.title}
                                   className="w-full h-full object-cover transition-transform duration-300 hover:scale-105"
                                 />
                               </div>
-                              <div className="p-4">
+                              <div className="p-2">
                                 <div className="text-xs font-medium text-amber-400 mb-2">{article.category}</div>
                                 <h4 className="text-white font-medium mb-2 line-clamp-2">{article.title}</h4>
                                 <p className="text-gray-400 text-sm line-clamp-3">{article.summary}</p>

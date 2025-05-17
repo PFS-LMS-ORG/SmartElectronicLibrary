@@ -12,11 +12,13 @@ class User(db.Model):
     password_hash = db.Column(db.String(128), nullable=False)
     role = db.Column(db.String(10), default='user')
     date_joined = db.Column(db.DateTime, default=datetime.utcnow)  # Added date_joined field
+    login_count = db.Column(db.Integer, default=0)
     rentals = db.relationship('Rental', back_populates='user')
     rental_requests = db.relationship('RentalRequest', back_populates='user')
     chat_messages = db.relationship("ChatMessage", back_populates="user")
     liked_articles = db.relationship('ArticleLike', back_populates='user', cascade="all, delete-orphan")
     bookmarked_articles = db.relationship('ArticleBookmark', back_populates='user', cascade="all, delete-orphan")
+    notifications = db.relationship('Notification', back_populates='user', cascade='all, delete-orphan')
 
     def set_password(self, password):
         """Hash and set the user's password."""
@@ -37,5 +39,8 @@ class User(db.Model):
             'role': self.role,
             'date_joined': self.date_joined.strftime("%Y-%m-%d %H:%M:%S") if self.date_joined else None,
             'rentals': [rental.to_dict() for rental in self.rentals],
-            'rental_requests': [request.to_dict() for request in self.rental_requests]
+            'rental_requests': [request.to_dict() for request in self.rental_requests],
+            'liked_articles': [article.to_dict() for article in self.liked_articles],
+            'bookmarked_articles': [article.to_dict() for article in self.bookmarked_articles],
+            'notifications': [notification.to_dict() for notification in self.notifications]
         }
