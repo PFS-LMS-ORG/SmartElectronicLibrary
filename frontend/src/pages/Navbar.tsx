@@ -1,18 +1,26 @@
 import { useState, useRef, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Book, LogOut, Menu, X, Search, FileText } from 'lucide-react';
+import { Book, LogOut, Menu, X, Search, FileText, Bell } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { createPortal } from 'react-dom';
+import NotificationDropdown from '@/components/notification/NotificationDropDown';
+import { useNotifications } from '../context/NotificationContext'; // Import the notifications hook
 
 const Navbar = () => {
   const { user, isAuthenticated, logout } = useAuth();
+  const { unreadCount } = useNotifications(); // Get unread count from the notification context
   const navigate = useNavigate();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [searchDropdownOpen, setSearchDropdownOpen] = useState(false);
+  const [notificationDropdownOpen, setNotificationDropdownOpen] = useState(false);
   const [dropdownPos, setDropdownPos] = useState({ top: 0, left: 0 });
+  const [notificationPos, setNotificationPos] = useState({ top: 0, left: 0 });
   const [domReady, setDomReady] = useState(false);
   const searchButtonRef = useRef<HTMLDivElement>(null);
+  const notificationButtonRef = useRef<HTMLDivElement>(null);
   const hideTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const hideNotificationTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
 
   useEffect(() => {
     setDomReady(true);
@@ -37,6 +45,7 @@ const Navbar = () => {
     setMobileMenuOpen(false);
   };
 
+  // Search dropdown hover functionality
   const openSearchDropdown = () => {
     if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current);
 
@@ -55,6 +64,44 @@ const Navbar = () => {
     hideTimeoutRef.current = setTimeout(() => {
       setSearchDropdownOpen(false);
     }, 150);
+  };
+
+  // Notification dropdown hover functionality
+  const openNotificationDropdown = () => {
+    if (hideNotificationTimeoutRef.current) clearTimeout(hideNotificationTimeoutRef.current);
+
+    const button = notificationButtonRef.current;
+    if (button) {
+      const rect = button.getBoundingClientRect();
+      setNotificationPos({
+        top: rect.bottom + window.scrollY,
+        left: rect.right + window.scrollX - 320, // Adjust positioning to align properly
+      });
+      setNotificationDropdownOpen(true);
+    }
+  };
+
+  const closeNotificationWithDelay = () => {
+    hideNotificationTimeoutRef.current = setTimeout(() => {
+      setNotificationDropdownOpen(false);
+    }, 150);
+  };
+
+  const closeNotificationDropdown = () => {
+    setNotificationDropdownOpen(false);
+  };
+
+  // For mobile, we need click functionality
+  const toggleNotificationDropdown = () => {
+    const button = notificationButtonRef.current;
+    if (button) {
+      const rect = button.getBoundingClientRect();
+      setNotificationPos({
+        top: rect.bottom + window.scrollY,
+        left: rect.right + window.scrollX - 320,
+      });
+      setNotificationDropdownOpen(!notificationDropdownOpen);
+    }
   };
 
   return (
@@ -90,7 +137,7 @@ const Navbar = () => {
               </button>
             </div>
 
-            {/* Portal Dropdown */}
+            {/* Portal Dropdown for Search */}
             {domReady && searchDropdownOpen && createPortal(
               <div
                 onMouseEnter={openSearchDropdown}
@@ -127,6 +174,39 @@ const Navbar = () => {
                 Admin
               </Link>
             )}
+
+            {/* Notification Bell with Hover */}
+            <div
+              ref={notificationButtonRef}
+              onMouseEnter={openNotificationDropdown}
+              onMouseLeave={closeNotificationWithDelay}
+              className="relative"
+            >
+              <button
+                className="w-9 h-9 rounded-full flex items-center justify-center bg-gray-800/70 hover:bg-gray-700/90 border border-gray-600/50 hover:border-gray-500/70 transition-all duration-300 shadow-sm relative"
+                title="Notifications"
+              >
+                <Bell size={18} className="text-gray-300 hover:text-amber-400 transition-colors duration-300" />
+                {unreadCount > 0 && (
+                  <span className="absolute -top-1 -right-1 bg-amber-500 text-white text-xs w-5 h-5 flex items-center justify-center rounded-full">
+                    {unreadCount}
+                  </span>
+                )}
+              </button>
+            </div>
+
+            {/* Notification Dropdown Portal */}
+            {domReady && notificationDropdownOpen && createPortal(
+              <div
+                onMouseEnter={openNotificationDropdown}
+                onMouseLeave={closeNotificationWithDelay}
+                style={{ position: 'absolute', top: `${notificationPos.top}px`, left: `${notificationPos.left}px` }}
+              >
+                <NotificationDropdown onClose={closeNotificationDropdown} />
+              </div>,
+              document.body
+            )}
+
             <div onClick={handleProfileClick} className="flex items-center gap-3 cursor-pointer hover:opacity-80 transition-opacity">
               <div className="bg-gradient-to-br from-teal-500 to-teal-600 rounded-full h-9 w-9 flex items-center justify-center text-white font-medium text-sm border border-teal-400/50 shadow-md">
                 {user ? getInitials(user.name) : '??'}
@@ -172,6 +252,23 @@ const Navbar = () => {
                   Browse Articles
                 </Link>
               </div>
+              
+              {/* Mobile Notifications - Keep click functionality for mobile */}
+              <button 
+                onClick={toggleNotificationDropdown} 
+                className="flex items-center justify-between text-gray-200 hover:text-amber-400 transition-colors duration-300 p-2"
+              >
+                <div className="flex items-center gap-3">
+                  <Bell size={18} />
+                  <span>Notifications</span>
+                </div>
+                {unreadCount > 0 && (
+                  <span className="bg-amber-500 text-white text-xs px-2 py-1 rounded-full">
+                    {unreadCount}
+                  </span>
+                )}
+              </button>
+              
               {user?.role === 'admin' && (
                 <Link to="/admin" onClick={() => setMobileMenuOpen(false)} className="text-gray-200 font-medium hover:text-amber-400 transition-colors duration-300 p-2">
                   Admin
@@ -203,8 +300,20 @@ const Navbar = () => {
         </div>,
         document.body
       )}
+
+      {/* Mobile Notification Dropdown Portal */}
+      {notificationDropdownOpen && mobileMenuOpen && domReady && createPortal(
+        <div className="fixed top-[60px] left-0 right-0 z-[10000]">
+          <NotificationDropdown onClose={closeNotificationDropdown} />
+        </div>,
+        document.body
+      )}
     </nav>
   );
 };
 
 export default Navbar;
+
+
+
+

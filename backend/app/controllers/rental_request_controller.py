@@ -6,6 +6,7 @@ from flask_jwt_extended import jwt_required, get_jwt_identity
 import requests
 from app.model.User import User
 from app.services.RentalRequestService import RentalRequestService
+from app.services.NotificationService import NotificationService
 from sqlalchemy.exc import SQLAlchemyError
 import logging
 
@@ -39,6 +40,30 @@ def create_rental_request():
         
         user_id = get_jwt_identity()
         rental_request = RentalRequestService.create_request(user_id, data['book_id'])
+        
+        if not rental_request:
+            logger.error("Failed to create rental request: %s", data)
+            return jsonify({'error': 'Failed to create rental request'}), 500
+        
+        # Create a notification for the user
+        NotificationService.create_notification(
+            user_id=user_id,
+            type='info',
+            message=f'Your request to borrow "{rental_request["book"]["title"]}" has been submitted.'
+        )
+        
+        # Add notification for admins
+        admin_users = User.query.filter_by(role='admin').all()
+        user = User.query.get(user_id)
+        
+        for admin in admin_users:
+            # Create a notification for each admin
+            NotificationService.create_notification(
+                user_id=admin.id,
+                type='info',
+                message=f'New borrow request: {user.name} requested "{rental_request["book"]["title"]}".'
+            )
+        
         
         # Send email notification to user
         # -----------------------------------------------------------------------------------------
@@ -172,6 +197,17 @@ def approve_rental_request(request_id):
         
         request_data = RentalRequestService.approve_request(request_id)
         
+        if not request_data:
+            logger.error("Failed to approve rental request: %s", request_id)
+            return jsonify({'error': 'Failed to approve rental request'}), 500
+        
+        # Create a notification for the user
+        NotificationService.create_notification(
+            user_id=request_data['user_id'],
+            type='borrow-accepted',
+            message=f'Your request to borrow "{request_data["book"]["title"]}" has been approved.'
+        )
+        
         # Send email notification to user
         # -----------------------------------------------------------------------------------------
         # Get the JWT token from the incoming request
@@ -206,6 +242,17 @@ def reject_rental_request(request_id):
             return admin_check
         
         request_data = RentalRequestService.reject_request(request_id)
+        
+        if not request_data:
+            logger.error("Failed to reject rental request: %s", request_id)
+            return jsonify({'error': 'Failed to reject rental request'}), 500
+        
+        # Create a notification for the user
+        NotificationService.create_notification(
+            user_id=request_data['user_id'],
+            type='borrow-rejected',
+            message=f'Your request to borrow "{request_data["book"]["title"]}" has been rejected. Reason: Book currently unavailable.'
+        )
         
         # Send email notification to user
         # -----------------------------------------------------------------------------------------

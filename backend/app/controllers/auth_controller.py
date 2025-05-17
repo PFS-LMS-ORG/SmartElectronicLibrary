@@ -7,6 +7,7 @@ from app.db import db
 from app.model.User import User
 from app.model.AccountRequest import AccountRequest
 from app.services.UserService import UserService
+from app.services.NotificationService import NotificationService
 from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity
 import logging
 import requests
@@ -44,6 +45,21 @@ def login():
             return jsonify({'message': 'Invalid email or password'}), 401
         access_token = create_access_token(identity=str(user.id))
         logger.debug("Generated token for user %s: %s", user.id, access_token)
+        
+        is_first_login = user.login_count == 0
+        
+        if is_first_login:
+            # Create a welcome notification for the user
+            NotificationService.create_notification(
+                user_id=user.id,
+                type='welcome',
+                message='Welcome to LMSENSA+! Your registration has been approved.'
+            )
+        
+        # Update login count regardless of whether it's first login
+        user.login_count += 1
+        db.session.commit()
+        
         return jsonify({
             'access_token': access_token,
             'user': {'id': user.id, 'name': user.name, 'email': user.email, 'role': user.role}
@@ -76,6 +92,20 @@ def register():
         account_request = UserService.create_account_request(name, email, hashed_password)
         if not account_request:
             return jsonify({'message': 'Email already requested'}), 400
+        
+        # Find all admin users
+        admin_users = User.query.filter_by(role='admin').all()
+        
+        # Create notification for each admin
+        for admin in admin_users:
+            # Create a notification for the admin
+            NotificationService.create_notification(
+                user_id=admin.id,
+                type='info',
+                message=f'New user registration: {name} ({email}) is waiting for approval.'
+            )
+            
+            
 
         # Send registration email using service token
         # -----------------------------------------------------------------------------------------

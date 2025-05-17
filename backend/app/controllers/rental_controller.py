@@ -4,6 +4,7 @@
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from app.services.RentalService import RentalService
+from app.services.NotificationService import NotificationService
 from app.model.User import User
 from app.model.Rental import Rental
 from sqlalchemy.exc import IntegrityError
@@ -244,6 +245,14 @@ def return_rental(rental_id):
         rental = RentalService.return_book(rental_id)
         if not rental:
             return jsonify({'error': 'Rental not found'}), 404
+        
+        
+        # Create a notification for the user
+        NotificationService.create_notification(
+            user_id=rental.user_id,
+            type='info',
+            message=f'You have successfully returned "{rental.book.title}".'
+        )
         
         # Send email notification
         # -----------------------------------------------------------------------------------------

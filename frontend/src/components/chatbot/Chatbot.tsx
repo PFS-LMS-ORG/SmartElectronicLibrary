@@ -8,7 +8,6 @@ import { useNavigate } from 'react-router-dom';
 import BookRecommendations, { BookRecommendation } from './BookRecommendation';
 import ArticleRecommendations, { ArticleRecommendation } from './ArticleRecommendation';
 
-// Define a proper type for the role
 type MessageRole = 'user' | 'assistant';
 
 interface Message {
@@ -72,8 +71,7 @@ const Chatbot: React.FC = () => {
       errorClearing: 'خطأ أثناء مسح المحادثة'
     },
   };
-  
-  // This effect adds welcome message only on first open or after clearing chat
+
   useEffect(() => {
     if (isOpen && isFirstOpen && messages.length === 0) {
       setMessages([
@@ -91,94 +89,75 @@ const Chatbot: React.FC = () => {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
-  
-  // Load chat history only when the chat is opened
+
   useEffect(() => {
-      if (!isOpen || hasLoadedHistory) return;
-      
-      const fetchHistory = async () => {
-        try {
-          const token = localStorage.getItem('token');
-          const response = await axios.get('/api/chatbot/history', {
-            headers: { Authorization: `Bearer ${token}` },
-          });
-          
-          if (response.data.chat_history && response.data.chat_history.length > 0) {
-            // Process history to include both user and assistant messages
-            const processedHistory: Message[] = [];
-            
-            response.data.chat_history.forEach((msg: any) => {
-              // Add the user message first
-              processedHistory.push({
-                id: `user-${msg.id}`,
-                content: msg.message,
-                role: 'user' as MessageRole,
-                timestamp: new Date(msg.created_at),
-              });
-              
-              // Check if there's a follow-up question in the response
-              const hasFollowUp = msg.follow_up_question && msg.follow_up_question.length > 0;
-              const mainResponse = hasFollowUp 
-                ? msg.response.replace(msg.follow_up_question, '').trim() 
-                : msg.response;
-              
-              // Add main response with both book and article recommendations
-              processedHistory.push({
-                id: msg.id.toString(),
-                content: mainResponse,
-                role: 'assistant' as MessageRole,
-                timestamp: new Date(msg.created_at),
-                book_recommendations: msg.book_recommendations,
-                article_recommendations: msg.article_recommendations, // Add article recommendations
-              });
-              
-              // Add follow-up as separate message if it exists
-              if (hasFollowUp) {
-                processedHistory.push({
-                  id: `follow-up-${msg.id}`,
-                  content: msg.follow_up_question,
-                  role: 'assistant' as MessageRole,
-                  timestamp: new Date(new Date(msg.created_at).getTime() + 100),
-                });
-              }
+    if (!isOpen || hasLoadedHistory) return;
+    const fetchHistory = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        const response = await axios.get('/api/chatbot/history', {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (response.data.chat_history && response.data.chat_history.length > 0) {
+          const processedHistory: Message[] = [];
+          response.data.chat_history.forEach((msg: any) => {
+            processedHistory.push({
+              id: `user-${msg.id}`,
+              content: msg.message,
+              role: 'user' as MessageRole,
+              timestamp: new Date(msg.created_at),
             });
-            
-            // Sort by timestamp in ascending order
-            processedHistory.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
-            
-            setMessages(processedHistory);
-            setIsFirstOpen(false); // We already have history, don't show welcome
-          } else if (messages.length === 0) {
-            // If no history and no messages, show welcome message
-            setMessages([
-              {
-                id: 'welcome',
-                content: translations[language].welcomeMessage,
-                role: 'assistant',
-                timestamp: new Date(),
-              },
-            ]);
-          }
-          
-          setHasLoadedHistory(true);
-        } catch (error) {
-          console.error('Error fetching chat history:', error);
-          // If error loading history, at least show welcome message
-          if (messages.length === 0) {
-            setMessages([
-              {
-                id: 'welcome',
-                content: translations[language].welcomeMessage,
-                role: 'assistant',
-                timestamp: new Date(),
-              },
-            ]);
-          }
-          setHasLoadedHistory(true);
+            const hasFollowUp = msg.follow_up_question && msg.follow_up_question.length > 0;
+            const mainResponse = hasFollowUp 
+              ? msg.response.replace(msg.follow_up_question, '').trim() 
+              : msg.response;
+            processedHistory.push({
+              id: msg.id.toString(),
+              content: mainResponse,
+              role: 'assistant' as MessageRole,
+              timestamp: new Date(msg.created_at),
+              book_recommendations: msg.book_recommendations,
+              article_recommendations: msg.article_recommendations,
+            });
+            if (hasFollowUp) {
+              processedHistory.push({
+                id: `follow-up-${msg.id}`,
+                content: msg.follow_up_question,
+                role: 'assistant' as MessageRole,
+                timestamp: new Date(new Date(msg.created_at).getTime() + 100),
+              });
+            }
+          });
+          processedHistory.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+          setMessages(processedHistory);
+          setIsFirstOpen(false);
+        } else if (messages.length === 0) {
+          setMessages([
+            {
+              id: 'welcome',
+              content: translations[language].welcomeMessage,
+              role: 'assistant',
+              timestamp: new Date(),
+            },
+          ]);
         }
-      };
-      
-      fetchHistory();
+        setHasLoadedHistory(true);
+      } catch (error) {
+        console.error('Error fetching chat history:', error);
+        if (messages.length === 0) {
+          setMessages([
+            {
+              id: 'welcome',
+              content: translations[language].welcomeMessage,
+              role: 'assistant',
+              timestamp: new Date(),
+            },
+          ]);
+        }
+        setHasLoadedHistory(true);
+      }
+    };
+    fetchHistory();
   }, [isOpen, language, hasLoadedHistory, messages.length]);
 
   const toggleChat = () => {
@@ -186,12 +165,9 @@ const Chatbot: React.FC = () => {
       toast.error(translations[language].authError);
       return;
     }
-    
     if (!isOpen) {
-      // When opening, set hasLoadedHistory to false to trigger reload if needed
       setHasLoadedHistory(false);
     }
-    
     setIsOpen(!isOpen);
   };
 
@@ -201,20 +177,16 @@ const Chatbot: React.FC = () => {
 
     const handleSendMessage = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    
     if (!inputValue.trim() || !isAuthenticated) return;
-    
     const userMessage: Message = {
       id: Date.now().toString(),
       content: inputValue,
       role: 'user',
       timestamp: new Date(),
     };
-    
     setMessages(prevMessages => [...prevMessages, userMessage]);
     setInputValue('');
     setIsLoading(true);
-    
     try {
       const token = localStorage.getItem('token');
       const response = await axios.post(
@@ -222,18 +194,8 @@ const Chatbot: React.FC = () => {
         { message: userMessage.content, language },
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      
-      // Map the book recommendations to the expected format
       const mappedBookRecommendations = response.data.recommended_books ? 
-        response.data.recommended_books.map((book: {
-          id?: string;
-          title?: string;
-          author?: string;
-          category?: string;
-          rating?: number;
-          cover_url?: string;
-          reason?: string;
-        }) => ({
+        response.data.recommended_books.map((book: any) => ({
           id: parseInt(book.id || '0') || 0,
           title: book.title || '',
           author: book.author || '',
@@ -242,36 +204,21 @@ const Chatbot: React.FC = () => {
           cover_url: book.cover_url || '',
           reason: book.reason || ''
         })) : [];
-      
-      // Map the article recommendations to the expected format
       const mappedArticleRecommendations = response.data.recommended_articles ? 
-        response.data.recommended_articles.map((article: {
-          id?: string;
-          title?: string;
-          author?: string;
-          category?: string;
-          summary?: string;
-          pdf_url?: string;
-          cover_image_url?: string;
-          read_time?: number;
-          views?: number;
-          likes?: number;
-          reason?: string;
-        }) => ({
+        response.data.recommended_articles.map((article: any) => ({
           id: parseInt(article.id || '0') || 0,
+          slug: article.slug || '',
           title: article.title || '',
           author: article.author || '',
           category: article.category || '',
           summary: article.summary || '',
           pdf_url: article.pdf_url || '',
           cover_image_url: article.cover_image_url || '',
-          read_time: article.read_time || undefined,
-          views: article.views || undefined,
-          likes: article.likes || undefined,
+          read_time: article.read_time || 5,
+          views: article.views || 0,
+          likes: article.likes || 0,
           reason: article.reason || ''
         })) : [];
-      
-      // First add the main response with recommendations
       setMessages(prevMessages => [
         ...prevMessages,
         {
@@ -280,11 +227,9 @@ const Chatbot: React.FC = () => {
           role: 'assistant',
           timestamp: new Date(),
           book_recommendations: mappedBookRecommendations,
-          article_recommendations: mappedArticleRecommendations, // Add article recommendations
+          article_recommendations: mappedArticleRecommendations,
         },
       ]);
-      
-      // Show the follow-up question with delay
       if (response.data.follow_up_question) {
         setTimeout(() => {
           setMessages(prevMessages => [
@@ -300,15 +245,15 @@ const Chatbot: React.FC = () => {
       }
     } catch (error) {
       console.error('Error sending message to chatbot:', error);
-        if (axios.isAxiosError(error) && error.response?.status === 401) {
-          toast.error(translations[language].authError);
-          setIsOpen(false);
-        } else {
-          toast.error('Failed to get a response. Please try again.');
-        }
-      } finally {
-        setIsLoading(false);
+      if (axios.isAxiosError(error) && error.response?.status === 401) {
+        toast.error(translations[language].authError);
+        setIsOpen(false);
+      } else {
+        toast.error('Failed to get a response. Please try again.');
       }
+    } finally {
+      setIsLoading(false);
+    }
   };
 
 
@@ -322,7 +267,6 @@ const Chatbot: React.FC = () => {
       await axios.post('/api/chatbot/clear', {}, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      
       setMessages([
         {
           id: 'welcome',
@@ -331,10 +275,7 @@ const Chatbot: React.FC = () => {
           timestamp: new Date(),
         },
       ]);
-      
-      // Reset the first open state so welcome message appears after clearing
       setIsFirstOpen(true);
-      
       toast.success(translations[language].conversationCleared);
     } catch (error) {
       console.error('Error clearing conversation:', error);
@@ -351,7 +292,7 @@ const Chatbot: React.FC = () => {
   };
 
   const handleArticleClick = (slug: string) => {
-    navigate(`/article/${slug}`);
+    navigate(`/articles/${slug}`);
   };
 
   const chatbotVariants = {
@@ -451,7 +392,6 @@ const Chatbot: React.FC = () => {
             >
               {messages.map((message) => (
                 <React.Fragment key={message.id}>
-                  {/* Message bubble */}
                   <div
                     className={`mb-4 ${message.role === 'user' ? 'flex flex-row-reverse' : 'flex'}`}
                   >
@@ -472,8 +412,6 @@ const Chatbot: React.FC = () => {
                       </div>
                     </div>
                   </div>
-                  
-                  {/* Book recommendations */}
                   {message.role === 'assistant' && message.book_recommendations && message.book_recommendations.length > 0 && (
                     <div className="mb-4 flex">
                       <div className="max-w-[90%] w-full">
@@ -485,8 +423,6 @@ const Chatbot: React.FC = () => {
                       </div>
                     </div>
                   )}
-
-                  {/* Article recommendations - NEW */}
                   {message.role === 'assistant' && message.article_recommendations && message.article_recommendations.length > 0 && (
                     <div className="mb-4 flex">
                       <div className="max-w-[90%] w-full">
@@ -498,12 +434,8 @@ const Chatbot: React.FC = () => {
                       </div>
                     </div>
                   )}
-
-                
                 </React.Fragment>
               ))}
-              
-              {/* Loading indicator */}
               {isLoading && (
                 <div className="flex mb-4">
                   <div className="bg-gray-800/70 text-gray-200 rounded-xl rounded-tl-none p-3">

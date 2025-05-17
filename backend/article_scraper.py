@@ -4,9 +4,23 @@ from bs4 import BeautifulSoup
 from datetime import datetime
 import hashlib
 import urllib.parse
+import re
 
 def slugify(text):
-    return text.lower().replace(" ", "-").replace("\n", "").strip()
+    # First convert to lowercase
+    text = text.lower()
+    # Replace all non-alphanumeric characters (except hyphens) with a space
+    text = re.sub(r'[^a-z0-9\s-]', ' ', text)
+    # Replace multiple spaces with a single space
+    text = re.sub(r'\s+', ' ', text)
+    # Trim spaces from start and end
+    text = text.strip()
+    # Replace spaces with hyphens
+    text = text.replace(' ', '-')
+    # Remove consecutive hyphens
+    text = re.sub(r'-+', '-', text)
+    
+    return text
 
 def generate_id(title):
     return hashlib.md5(title.encode()).hexdigest()
