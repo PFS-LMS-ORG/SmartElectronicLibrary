@@ -17,6 +17,7 @@ interface Message {
   timestamp: Date;
   book_recommendations?: BookRecommendation[];
   article_recommendations?: ArticleRecommendation[];
+  follow_up_question?: string;
 }
 
 type LanguageOption = 'en' | 'fr' | 'ar';
@@ -118,6 +119,7 @@ const Chatbot: React.FC = () => {
               timestamp: new Date(msg.created_at),
               book_recommendations: msg.book_recommendations,
               article_recommendations: msg.article_recommendations,
+              follow_up_question: msg.follow_up_question
             });
             if (hasFollowUp) {
               processedHistory.push({
@@ -228,6 +230,7 @@ const Chatbot: React.FC = () => {
           timestamp: new Date(),
           book_recommendations: mappedBookRecommendations,
           article_recommendations: mappedArticleRecommendations,
+          follow_up_question: response.data.follow_up_question,
         },
       ]);
       if (response.data.follow_up_question) {
