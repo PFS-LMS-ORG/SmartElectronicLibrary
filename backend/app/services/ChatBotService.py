@@ -31,7 +31,9 @@ class ChatBotService:
     
     def _save_chat_message(self, user_id: int, message: str, response: str, language: str, 
                         book_recommendations: Optional[List] = None, 
-                        article_recommendations: Optional[List] = None):
+                        article_recommendations: Optional[List] = None,
+                        follow_up_question: Optional[str] = None) -> None:
+        """Save chat message to the database."""
         try:
             from app.model.ChatMessage import ChatMessage
             new_chat = ChatMessage(
@@ -40,7 +42,8 @@ class ChatBotService:
                 response=response,
                 language=language,
                 book_recommendations=json.dumps(book_recommendations) if book_recommendations else None,
-                article_recommendations=json.dumps(article_recommendations) if article_recommendations else None
+                article_recommendations=json.dumps(article_recommendations) if article_recommendations else None,
+                follow_up_question=follow_up_question if follow_up_question else None
             )
             db.session.add(new_chat)
             db.session.commit()
@@ -62,9 +65,11 @@ class ChatBotService:
                     try:
                         book_recommendations = json.loads(msg.book_recommendations) if msg.book_recommendations else []
                         article_recommendations = json.loads(msg.article_recommendations) if msg.article_recommendations else []
+                        follow_up_question = msg.follow_up_question if msg.follow_up_question else None
                     except (json.JSONDecodeError, TypeError):
                         book_recommendations = []
                         article_recommendations = []
+                        follow_up_question = None
                     history.append({
                         'id': msg.id,
                         'message': msg.message,
@@ -72,6 +77,7 @@ class ChatBotService:
                         'language': msg.language,
                         'book_recommendations': book_recommendations,
                         'article_recommendations': article_recommendations,
+                        'follow_up_question': follow_up_question,
                         'created_at': msg.created_at.isoformat() if hasattr(msg.created_at, 'isoformat') else str(msg.created_at)
                     })
                 return history
