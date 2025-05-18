@@ -8,11 +8,12 @@ import ast
 import os
 import traceback
 import logging
-from flask_jwt_extended import get_jwt_identity
-from flask_sqlalchemy import SQLAlchemy
+from threading import Timer
 from langchain.schema import Document
+# from langchain.vectorstores import FAISS
+# from langchain.embeddings import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
-from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_huggingface import HuggingFaceEmbeddings
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_core.tools import tool
 from langchain_core.messages import SystemMessage, AIMessage, HumanMessage
@@ -23,9 +24,11 @@ from langgraph.prebuilt import ToolNode, tools_condition
 from langchain.chat_models import init_chat_model
 from pydantic import BaseModel, Field
 from typing import List, Optional
+from sqlalchemy import event
 from app import db
 from app.model.Book import Book
 from app.model.Article import Article
+import gc
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -58,7 +61,6 @@ class ArticleRecommendation(BaseModel):
     read_time: int = Field(description="Estimated read time in minutes")
     views: int = Field(description="Number of views")
     likes: int = Field(description="Number of likes")
-    
 
 class ChatResponse(BaseModel):
     answer: str = Field(description="The chatbot's response to the user's query")
@@ -89,10 +91,57 @@ class ChatBot:
         self.embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
         self.vector_store = self.load_content_from_db()
         self.graph = self.create_graph()
+        self._id_cache = {}  # Cache for validated IDs
+        self._pending_updates = set()  # For debounced updates
+        self._update_timer = None
         self._initialized = True
+        if app:
+            with app.app_context():
+                event.listen(Book, "after_insert", self._queue_update_book)
+                event.listen(Book, "after_update", self._queue_update_book)
+                event.listen(Book, "after_delete", self._queue_delete_book)
+                event.listen(Article, "after_insert", self._queue_update_article)
+                event.listen(Article, "after_update", self._queue_update_article)
+                event.listen(Article, "after_delete", self._queue_delete_article)
+
+    def _queue_update_book(self, mapper, connection, target):
+        self._pending_updates.add(("book", target.id))
+        self._schedule_updates()
+
+    def _queue_delete_book(self, mapper, connection, target):
+        self._pending_updates.add(("book_delete", target.id))
+        self._schedule_updates()
+
+    def _queue_update_article(self, mapper, connection, target):
+        self._pending_updates.add(("article", target.id))
+        self._schedule_updates()
+
+    def _queue_delete_article(self, mapper, connection, target):
+        self._pending_updates.add(("article_delete", target.id))
+        self._schedule_updates()
+
+    def _schedule_updates(self):
+        if self._update_timer:
+            self._update_timer.cancel()
+        self._update_timer = Timer(5.0, self._process_updates)
+        self._update_timer.start()
+
+    def _process_updates(self):
+        with self.app.app_context():
+            updates = self._pending_updates.copy()
+            self._pending_updates.clear()
+            for update_type, item_id in updates:
+                if update_type == "book":
+                    self.update_book_in_vector_store(item_id)
+                elif update_type == "book_delete":
+                    self.remove_book_from_vector_store(item_id)
+                elif update_type == "article":
+                    self.update_article_in_vector_store(item_id)
+                elif update_type == "article_delete":
+                    self.remove_article_from_vector_store(item_id)
+        self._update_timer = None
 
     def book_to_document(self, book):
-        """Convert a SQLAlchemy Book row to a LangChain Document."""
         authors_text = ", ".join([author.name for author in book.authors]) if book.authors else "Unknown"
         categories_text = ", ".join([category.name for category in book.categories]) if book.categories else "Unknown"
         content = f"""
@@ -110,18 +159,16 @@ class ChatBot:
         Featured Book: {book.featured_book or False}
         Cover URL: {book.cover_url or ''}
         """
-        return Document(
+        doc = Document(
             page_content=content.strip(),
             metadata={"title": book.title or "Unknown", "id": f"book_{book.id}", "type": "book"}
         )
+        if f"book_{book.id}" != doc.metadata["id"]:
+            logger.error(f"Metadata ID mismatch for book {book.id}")
+        return doc
 
     def article_to_document(self, article):
-        """Convert a SQLAlchemy Article row to a LangChain Document."""
         author_name = article.author.name if article.author else "Unknown"
-        
-        # First debug the actual database values
-        logger.debug(f"Database Article {article.id}: pdf_url='{article.pdf_url}', cover_image_url='{article.cover_image_url}'")
-        
         content = f"""
         Type: Article
         Article ID: {article.id or 0}
@@ -136,18 +183,15 @@ class ChatBot:
         Views: {article.meta.views if article.meta else 0}
         Likes: {article.meta.likes_count if article.meta else 0}
         """
-        return Document(
+        doc = Document(
             page_content=content.strip(),
             metadata={"title": article.title or "Unknown", "id": f"article_{article.id}", "type": "article"}
         )
-
-
-
-
-
+        if f"article_{article.id}" != doc.metadata["id"]:
+            logger.error(f"Metadata ID mismatch for article {article.id}")
+        return doc
 
     def add_book_to_vector_store(self, book_id: int):
-        """Add a book to the vector store by ID."""
         with self.app.app_context():
             row = db.session.query(Book).get(book_id)
             if row:
@@ -165,7 +209,6 @@ class ChatBot:
                 logger.info(f"Added article {article_id} to vector store.")
 
     def remove_book_from_vector_store(self, book_id: int):
-        """Remove a book from the vector store by ID."""
         self.vector_store.delete([f"book_{book_id}"])
         logger.info(f"Removed book {book_id} from vector store.")
 
@@ -175,7 +218,6 @@ class ChatBot:
         logger.info(f"Removed article {article_id} from vector store.")
 
     def update_book_in_vector_store(self, book_id: int):
-        """Update a book in the vector store by ID."""
         with self.app.app_context():
             row = db.session.query(Book).get(book_id)
             if row:
@@ -185,7 +227,6 @@ class ChatBot:
                 logger.info(f"Updated book {book_id} in vector store.")
 
     def add_article_to_vector_store(self, article_id: int):
-        """Add an article to the vector store by ID."""
         with self.app.app_context():
             row = db.session.query(Article).get(article_id)
             if row:
@@ -194,12 +235,10 @@ class ChatBot:
                 logger.info(f"Added article {article_id} to vector store.")
 
     def remove_article_from_vector_store(self, article_id: int):
-        """Remove an article from the vector store by ID."""
         self.vector_store.delete([f"article_{article_id}"])
         logger.info(f"Removed article {article_id} from vector store.")
 
     def update_article_in_vector_store(self, article_id: int):
-        """Update an article in the vector store by ID."""
         with self.app.app_context():
             row = db.session.query(Article).get(article_id)
             if row:
@@ -209,79 +248,87 @@ class ChatBot:
                 logger.info(f"Updated article {article_id} in vector store.")
 
     def load_content_from_db(self):
-        """Load books and articles from the database into the FAISS vector store."""
         cache_path = "./content_vectorstore"
         cache_index = f"{cache_path}/index.faiss"
         cache_metadata = f"{cache_path}/index.pkl"
-
-        if os.path.exists(cache_index) and os.path.exists(cache_metadata):
-            try:
-                logger.info("Loading cached FAISS vector store...")
-                vector_store = FAISS.load_local(
-                    folder_path=cache_path,
-                    embeddings=self.embeddings,
-                    allow_dangerous_deserialization=True
-                )
-                logger.info("Cached vector store loaded successfully.")
-                return vector_store
-            except Exception as e:
-                logger.error(f"Failed to load cached vector store: {e}", exc_info=True)
-
-        logger.info("Building new FAISS vector store from database...")
+        logger.info("Attempting to load FAISS vector store from cache...")
         with self.app.app_context():
             try:
-                books = db.session.query(Book).limit(200).all()
-                articles = db.session.query(Article).limit(200).all()
-                if not books and not articles:
-                    logger.warning("No content found in database. Creating empty vector store.")
-                    return FAISS.from_texts(["placeholder empty library"], embedding=self.embeddings)
+                # Check if cache exists
+                if os.path.exists(cache_index) and os.path.exists(cache_metadata):
+                    try:
+                        vector_store = FAISS.load_local(cache_path, embeddings=self.embeddings, allow_dangerous_deserialization=True)
+                        logger.info("Successfully loaded FAISS vector store from cache.")
+                        return vector_store
+                    except Exception as e:
+                        logger.warning(f"Failed to load cache: {str(e)}. Rebuilding vector store...")
+                else:
+                    logger.info("No cache found. Building new FAISS vector store from database...")
+
+                # Build new vector store
+                vector_store = None
+                batch_size = 200
+                for model, type_name in [(Book, "book"), (Article, "article")]:
+                    offset = 0
+                    while True:
+                        try:
+                            rows = db.session.query(model).offset(offset).limit(batch_size).all()
+                            if not rows:
+                                break
+                            docs = [getattr(self, f"{type_name}_to_document")(row) for row in rows]
+                            chunks = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200).split_documents(docs)
+                            if vector_store is None:
+                                vector_store = FAISS.from_documents(chunks, embedding=self.embeddings)
+                            else:
+                                vector_store.add_documents(chunks)
+                            os.makedirs(cache_path, exist_ok=True)
+                            vector_store.save_local(cache_path)
+                            offset += batch_size
+                            logger.info(f"Processed {offset} {type_name}s")
+                            gc.collect()
+                        except Exception as e:
+                            logger.error(f"Error processing {type_name} batch at offset {offset}: {str(e)}")
+                            raise
+                if vector_store is None:
+                    logger.warning("No content found in database.")
+                    return FAISS.from_texts(["No books or articles found in library database"], embedding=self.embeddings)
+                logger.info("Successfully built and saved FAISS vector store.")
+                return vector_store
             except Exception as e:
-                logger.error(f"Failed to query content from database: {e}")
+                logger.error(f"Failed to build vector store: {str(e)}")
+                logger.error(traceback.format_exc())
                 return FAISS.from_texts(["Error accessing library database"], embedding=self.embeddings)
 
-            docs = []
-            for book in books:
-                doc = self.book_to_document(book)
-                docs.append(doc)
-            for article in articles:
-                doc = self.article_to_document(article)
-                docs.append(doc)
 
-        splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
-        chunks = splitter.split_documents(docs)
-        vector_store = FAISS.from_documents(chunks, embedding=self.embeddings)
-
-        try:
-            os.makedirs(cache_path, exist_ok=True)
-            vector_store.save_local(cache_path)
-            logger.info(f"Vector store cached to {cache_path}.")
-        except Exception as e:
-            logger.error(f"Failed to cache vector store: {e}")
-
-        return vector_store
 
 
     def create_graph(self):
         @tool(response_format="content_and_artifact")
         def retrieve(query: str):
             """Retrieve information related to a query."""
-            retrieved_docs = self.vector_store.similarity_search(query, k=3)
+            logger.debug(f"Retrieving documents for query: {query}")
+            try:
+                retrieved_docs = self.vector_store.similarity_search(query, k=3)
+                logger.debug(f"Retrieved {len(retrieved_docs)} documents")
+            except Exception as e:
+                logger.error(f"Vector store search failed: {str(e)}")
+                return "No results found due to search error.", {"books": [], "articles": []}
+
             books = []
             articles = []
             with self.app.app_context():
                 for doc in retrieved_docs:
-                    if doc.metadata["type"] == "book":
+                    metadata = doc.metadata or {}
+                    doc_type = metadata.get("type", "unknown")
+                    doc_id = metadata.get("id", "unknown")
+                    if doc_type == "book":
                         try:
-                            # Extract book ID and get the actual book from database
-                            book_id = int(doc.metadata["id"].replace("book_", ""))
+                            book_id = int(doc_id.replace("book_", ""))
                             book_obj = db.session.query(Book).get(book_id)
-                            
                             if book_obj:
-                                # Map directly from database object
                                 authors_text = ", ".join([author.name for author in book_obj.authors]) if book_obj.authors else "Unknown"
                                 categories_text = ", ".join([category.name for category in book_obj.categories]) if book_obj.categories else "Unknown"
-                                
-                                book_info = {
+                                books.append({
                                     "id": str(book_obj.id),
                                     "title": book_obj.title or "Unknown",
                                     "author": authors_text,
@@ -294,276 +341,71 @@ class ChatBot:
                                     "available_books": book_obj.available_books or 0,
                                     "featured_book": book_obj.featured_book or False,
                                     "cover_url": book_obj.cover_url or None
-                                }
-                                books.append(book_info)
+                                })
                             else:
-                                # Fallback to parsing document content if book not found in database
-                                logger.warning(f"Book {book_id} not found in database, parsing from vector store")
-                                book_info = {
-                                    "id": "0",
-                                    "title": "Unknown",
-                                    "author": "Unknown",
-                                    "category": "Unknown",
-                                    "description": "No description",
-                                    "summary": "No summary",
-                                    "rating": 0.0,
-                                    "borrow_count": 0,
-                                    "total_books": 0,
-                                    "available_books": 0,
-                                    "featured_book": False,
-                                    "cover_url": None
-                                }
-                                
-                                # Parse document content as fallback
-                                lines = doc.page_content.split("\n")
-                                for line in lines:
-                                    line = line.strip()
-                                    if line.startswith("Book ID: "):
-                                        book_info["id"] = str(line.replace("Book ID: ", "").strip())
-                                    elif line.startswith("Title: "):
-                                        book_info["title"] = line.replace("Title: ", "").strip()
-                                    elif line.startswith("Author: "):
-                                        book_info["author"] = line.replace("Author: ", "").strip()
-                                    elif line.startswith("Category: "):
-                                        book_info["category"] = line.replace("Category: ", "").strip()
-                                    elif line.startswith("Description: "):
-                                        book_info["description"] = line.replace("Description: ", "").strip()
-                                    elif line.startswith("Summary: "):
-                                        book_info["summary"] = line.replace("Summary: ", "").strip()
-                                    elif line.startswith("Rating: "):
-                                        try:
-                                            book_info["rating"] = float(line.replace("Rating: ", "").strip())
-                                        except ValueError:
-                                            book_info["rating"] = 0.0
-                                    elif line.startswith("Borrow Count: "):
-                                        try:
-                                            book_info["borrow_count"] = int(line.replace("Borrow Count: ", "").strip())
-                                        except ValueError:
-                                            book_info["borrow_count"] = 0
-                                    elif line.startswith("Total Books: "):
-                                        try:
-                                            book_info["total_books"] = int(line.replace("Total Books: ", "").strip())
-                                        except ValueError:
-                                            book_info["total_books"] = 0
-                                    elif line.startswith("Available Books: "):
-                                        try:
-                                            book_info["available_books"] = int(line.replace("Available Books: ", "").strip())
-                                        except ValueError:
-                                            book_info["available_books"] = 0
-                                    elif line.startswith("Featured Book: "):
-                                        book_info["featured_book"] = line.replace("Featured Book: ", "").strip().lower() == "true"
-                                    elif line.startswith("Cover URL: "):
-                                        cover_url = line.replace("Cover URL: ", "").strip()
-                                        book_info["cover_url"] = cover_url if cover_url else None
-                                
-                                books.append(book_info)
+                                logger.warning(f"Book {book_id} not found in database")
                         except Exception as e:
-                            logger.error(f"Error processing book document: {e}")
-                            logger.error(traceback.format_exc())
-                
-                    elif doc.metadata["type"] == "article":
+                            logger.error(f"Error processing book {doc_id}: {str(e)}")
+                    elif doc_type == "article":
                         try:
-                            # Extract article ID
-                            article_id = int(doc.metadata["id"].replace("article_", ""))
-                            
-                            # Query the database for the article
+                            article_id = int(doc_id.replace("article_", ""))
                             article = db.session.query(Article).get(article_id)
-                            
                             if article:
-                                # Log the article data
-                                logger.debug(f"ARTICLE FOUND - ID: {article_id}, Title: {article.title}")
-                                logger.debug(f"ARTICLE DATA - pdf_url: '{article.pdf_url}', cover_image_url: '{article.cover_image_url}'")
-                                
-                                # Get meta data with sensible defaults
-                                read_time = 5  # Default
-                                views = 0  # Default
-                                likes = 0  # Default
-                                
-                                if article.meta:
-                                    read_time = article.meta.read_time or 5
-                                    views = article.meta.views or 0
-                                    likes = article.meta.likes_count or 0
-                                
-                                # Create article info
-                                article_info = {
+                                read_time = article.meta.read_time or 5 if article.meta else 5
+                                views = article.meta.views or 0 if article.meta else 0
+                                likes = article.meta.likes_count or 0 if article.meta else 0
+                                articles.append({
                                     "id": str(article.id),
                                     "slug": article.slug or "unknown",
                                     "title": article.title or "Unknown",
                                     "author": article.author.name if article.author else "Unknown",
                                     "category": article.category or "Unknown",
                                     "summary": article.summary or "No summary",
-                                    "pdf_url": article.pdf_url or "",  # Direct from database
-                                    "cover_image_url": article.cover_image_url or "https://placehold.co/600x300",  # Direct from database
+                                    "pdf_url": article.pdf_url or "",
+                                    "cover_image_url": article.cover_image_url or "https://placehold.co/600x300",
                                     "read_time": read_time,
                                     "views": views,
                                     "likes": likes
-                                }
-                                
-                                # Log the prepared article info
-                                logger.debug(f"PREPARED ARTICLE INFO - pdf_url: '{article_info['pdf_url']}', cover_image_url: '{article_info['cover_image_url']}'")
-                                
-                                articles.append(article_info)
+                                })
                             else:
-                                logger.warning(f"ARTICLE NOT FOUND - ID: {article_id}")
+                                logger.warning(f"Article {article_id} not found in database")
                         except Exception as e:
-                            logger.error(f"ERROR PROCESSING ARTICLE - ID: {doc.metadata.get('id', 'unknown')}, Error: {e}")
-                            logger.error(traceback.format_exc())
-            
-            # Generate the content summary for the LLM
-            serialized = "\n\n".join(
-                (f"Type: {doc.metadata['type']}\nTitle: {doc.metadata['title']}\nContent: {doc.page_content}")
-                for doc in retrieved_docs
-            )
-            
-            # Log all articles to verify data
-            for i, article in enumerate(articles):
-                logger.debug(f"Final article {i} data being returned: pdf_url='{article['pdf_url']}', cover_image_url='{article['cover_image_url']}'")
-            
-            # CRITICAL FIX: Make sure to return as the proper structure AND directly attach to the message
-            result = {"books": books, "articles": articles}
-            
-            # Get the tool's caller and set the articles directly on the tool's response message
-            message = AIMessage(content=serialized)
-            message.additional_kwargs["artifacts"] = result
-            
-            # Log what we're returning
-            logger.debug(f"Returning {len(articles)} articles in artifacts")
-            logger.debug(f"Article IDs in artifacts: {[a['id'] for a in articles]}")
-            
-            # Return both the content and the artifacts
-            return message.content, result
+                            logger.error(f"Error processing article {doc_id}: {str(e)}")
+                    else:
+                        logger.warning(f"Unknown document type: {doc_type} for ID {doc_id}")
 
+            serialized = "\n\n".join(
+                (f"Type: {doc.metadata.get('type', 'unknown')}\nTitle: {doc.metadata.get('title', 'Unknown')}\nContent: {doc.page_content}")
+                for doc in retrieved_docs
+            ) if retrieved_docs else "No results found."
+            message = AIMessage(content=serialized, additional_kwargs={"artifacts": {"books": books, "articles": articles}})
+            logger.debug(f"Returning {len(books)} books and {len(articles)} articles")
+            return message.content, message.additional_kwargs["artifacts"]
 
         def query_or_respond(state: MessagesState):
             llm_with_tools = self.llm.bind_tools(self.get_tools())
             response = llm_with_tools.invoke(state["messages"])
             return {"messages": [response]}
 
-        def generate(state: MessagesState):
+        def generate(state: MessagesState):  # Removed self, now a standalone function
             try:
-                # Extract tool messages containing document information
                 tool_messages = [m for m in state["messages"] if m.type == "tool"]
                 docs_content = "\n\n".join(msg.content for msg in tool_messages if hasattr(msg, "content"))
-                
-                # Create maps for article lookup
-                article_data_by_id = {}    # Map of articles by ID
-                article_data_by_slug = {}  # Map of articles by slug
-                article_data_by_title = {} # Map of articles by title
-                
-                # CRITICAL FIX: Debug print to see what's in tool_messages
-                logger.debug(f"Tool messages count: {len(tool_messages)}")
-                for i, msg in enumerate(tool_messages):
-                    logger.debug(f"Tool message {i} type: {type(msg)}, has content: {hasattr(msg, 'content')}")
-                    logger.debug(f"Tool message {i} attributes: {dir(msg)}")
-                    
-                    # For each tool message, check the content and additional_kwargs
-                    if hasattr(msg, 'content'):
-                        logger.debug(f"Tool message {i} content: {msg.content[:100]}...")  # First 100 chars
-                        
-                    if hasattr(msg, 'additional_kwargs'):
-                        logger.debug(f"Tool message {i} additional_kwargs keys: {msg.additional_kwargs.keys()}")
-                        
-                        # CRITICAL FIX: Check what's in the additional_kwargs
-                        if 'artifacts' in msg.additional_kwargs:
-                            logger.debug(f"Tool message {i} artifacts keys: {msg.additional_kwargs['artifacts'].keys()}")
-                            
-                            # Check if 'articles' is in artifacts
-                            if 'articles' in msg.additional_kwargs['artifacts']:
-                                articles = msg.additional_kwargs['artifacts']['articles']
-                                logger.debug(f"Found {len(articles)} articles in tool message {i}")
-                                
-                                # Store each article by ID, slug, and title
-                                for article in articles:
-                                    article_id = str(article.get("id", "0"))
-                                    slug = article.get("slug", "").lower()
-                                    title = article.get("title", "").lower()
-                                    
-                                    # Store in ID map (both as string and int if possible)
-                                    article_data_by_id[article_id] = article
-                                    try:
-                                        if article_id.isdigit():
-                                            article_data_by_id[int(article_id)] = article
-                                    except (ValueError, TypeError):
-                                        pass
-                                    
-                                    # Store in slug map
-                                    if slug:
-                                        article_data_by_slug[slug] = article
-                                    
-                                    # Store in title map
-                                    if title:
-                                        article_data_by_title[title] = article
-                                        
-                                    logger.debug(f"Stored article: ID={article_id}, slug={slug}, title={title[:30]}...")
+                article_data_by_id = {}
+                for msg in tool_messages:
+                    if hasattr(msg, 'additional_kwargs') and 'artifacts' in msg.additional_kwargs:
+                        articles = msg.additional_kwargs['artifacts'].get('articles', [])
+                        for article in articles:
+                            article_id = str(article.get("id", "0"))
+                            article_data_by_id[article_id] = article
+                            if article_id.isdigit():
+                                article_data_by_id[int(article_id)] = article
+                            logger.debug(f"Stored article: ID={article_id}")
 
-                # CRITICAL FIX: Try another approach to access the articles directly from the function response
-                if not article_data_by_id:  # If we didn't get any articles from the previous method
-                    logger.debug("No articles found in artifacts. Trying direct parsing from tool responses.")
-                    
-                    # Look at each tool message for content that might contain article information
-                    for msg in tool_messages:
-                        if hasattr(msg, 'content') and msg.content:
-                            content = msg.content
-                            
-                            # Find all occurrences of "Article ID: X" in the content
-                            article_sections = content.split("Type: Article")
-                            
-                            for section in article_sections:
-                                if not section.strip():
-                                    continue
-                                    
-                                # Try to extract article ID
-                                import re
-                                article_id_match = re.search(r'Article ID: (\d+)', section)
-                                if article_id_match:
-                                    article_id = article_id_match.group(1)
-                                    
-                                    # Try to extract other article info
-                                    slug_match = re.search(r'Slug: ([^\n]+)', section)
-                                    title_match = re.search(r'Title: ([^\n]+)', section)
-                                    author_match = re.search(r'Author: ([^\n]+)', section)
-                                    category_match = re.search(r'Category: ([^\n]+)', section)
-                                    
-                                    # Extract info if found
-                                    slug = slug_match.group(1).strip() if slug_match else ""
-                                    title = title_match.group(1).strip() if title_match else ""
-                                    author = author_match.group(1).strip() if author_match else ""
-                                    category = category_match.group(1).strip() if category_match else ""
-                                    
-                                    # Create article data
-                                    article = {
-                                        "id": article_id,
-                                        "slug": slug,
-                                        "title": title,
-                                        "author": author,
-                                        "category": category,
-                                        "summary": "Summary not available",
-                                        "pdf_url": f"https://arxiv.org/pdf/2505.{10000 + int(article_id)}",
-                                        "cover_image_url": f"https://ui-avatars.com/api/?name={title[:2].upper()}&size=600&background=1E3A8A&color=fff",
-                                        "read_time": 5,
-                                        "views": 0,
-                                        "likes": 0
-                                    }
-                                    
-                                    # Store article in maps
-                                    article_data_by_id[article_id] = article
-                                    article_data_by_id[int(article_id)] = article
-                                    if slug:
-                                        article_data_by_slug[slug.lower()] = article
-                                    if title:
-                                        article_data_by_title[title.lower()] = article
-                                        
-                                    logger.debug(f"Extracted article from content: ID={article_id}, slug={slug}, title={title[:30]}...")
-
-                # Log the article ID keys to help with debugging
-                logger.debug(f"Article data maps: ID keys = {list(article_data_by_id.keys())}")
-                
-                # Create system message with instructions for the LLM
                 system_message = SystemMessage(
                     content=(
-                        "You are YOA+, a library assistant for a specific library collection. ONLY respond with information that is explicitly "
-                        "present in the database search results provided below.\n\n"
-                        
+                        "You are YOA+, a smart library assistant for LMSENSA+.\n"
+                        "ONLY respond with information explicitly present in the database search results.\n\n"
                         "CRITICAL INSTRUCTIONS:\n"
                         "1. NEVER invent or hallucinate books or articles - only use what's in the database results.\n"
                         "2. If no relevant items are found in the database, clearly state this fact.\n"
@@ -571,10 +413,10 @@ class ChatBot:
                         "4. Your main answer should ONLY acknowledge the user's query and indicate if you found relevant items, like: 'Here are some books about JavaScript you might find interesting.' or 'I couldn't find any articles on that topic.'\n"
                         "5. All book details must ONLY appear in the recommended_books structured field.\n"
                         "6. All article details must ONLY appear in the recommended_articles structured field.\n"
-                        "7. If the user asks for something not in the database, say 'I don't have that information in our library database.'\n"
+                        "7. If the user asks for something out of the library context, politely inform them that you can only assist with library-related queries.\n"
                         "8. Make follow-up questions relevant to the user's query or the recommendations provided.\n"
-                        "9. IMPORTANT: When recommending articles, ALWAYS use the article's numeric ID (not slug or title) in the id field.\n\n"
-                        
+                        "9. IMPORTANT: When recommending articles, ALWAYS use the article's numeric ID (not slug or title) in the id field.\n"
+                        "10. NEVER recommend more than 3 books or 3 articles. If there are more results, select only the top 3 most relevant ones.\n"
                         "RESPONSE FORMAT EXAMPLE:\n"
                         "- Correct answer: 'I found some books in our collection that match your interest in machine learning.'\n"
                         "- WRONG answer: 'Here are some books: 1. \"Machine Learning Basics\" by John Smith...'\n\n"
@@ -583,54 +425,36 @@ class ChatBot:
                     )
                 )
 
-                # Collect conversation messages
                 convo = [
                     msg for msg in state["messages"]
                     if msg.type in ("human", "system") or (msg.type == "ai" and not msg.tool_calls)
                 ]
-
-                # Create prompt with system message and conversation
                 prompt = [system_message] + convo
-                
-                # Get structured response from LLM
-                structured_llm = self.llm.with_structured_output(ChatResponse)
+                structured_llm = self.llm.with_structured_output(ChatResponse)  # Use self.llm from outer scope
                 response = structured_llm.invoke(prompt)
 
-                # Log the structured response for debugging
                 logger.info(f"LLM Response - Answer: {response.answer}")
-                logger.info(f"LLM Response - Follow-up question: {response.follow_up_question}")
-                logger.info(f"LLM Response - Recommended books count: {len(response.recommended_books) if response.recommended_books else 0}")
-                logger.info(f"LLM Response - Recommended articles count: {len(response.recommended_articles) if response.recommended_articles else 0}")
-                
-                # Prepare the output data
+                logger.info(f"LLM Response - Books: {len(response.recommended_books) if response.recommended_books else 0}")
+                logger.info(f"LLM Response - Articles: {len(response.recommended_articles) if response.recommended_articles else 0}")
+
                 validated_books = []
-                validated_articles = []
-                
-                
-                # Process book recommendations
                 if response.recommended_books:
                     for book in response.recommended_books:
-                        # Handle both dictionary and BookRecommendation object formats
-                        if isinstance(book, dict):
-                            book_data = book
-                        else:  # Assume it's a BookRecommendation or similar object
-                            book_data = {
-                                "id": getattr(book, "id", "0"),
-                                "title": getattr(book, "title", "Unknown"),
-                                "author": getattr(book, "author", "Unknown"),
-                                "category": getattr(book, "category", "Unknown"),
-                                "description": getattr(book, "description", "No description"),
-                                "summary": getattr(book, "summary", "No summary"),
-                                "rating": getattr(book, "rating", 0.0),
-                                "borrow_count": getattr(book, "borrow_count", 0),
-                                "total_books": getattr(book, "total_books", 0),
-                                "available_books": getattr(book, "available_books", 0),
-                                "featured_book": getattr(book, "featured_book", False),
-                                "cover_url": getattr(book, "cover_url", None)
-                            }
-                        
-                        # Validate and convert types
-                        validated_book = {
+                        book_data = book if isinstance(book, dict) else {
+                            "id": getattr(book, "id", "0"),
+                            "title": getattr(book, "title", "Unknown"),
+                            "author": getattr(book, "author", "Unknown"),
+                            "category": getattr(book, "category", "Unknown"),
+                            "description": getattr(book, "description", "No description"),
+                            "summary": getattr(book, "summary", "No summary"),
+                            "rating": getattr(book, "rating", 0.0),
+                            "borrow_count": getattr(book, "borrow_count", 0),
+                            "total_books": getattr(book, "total_books", 0),
+                            "available_books": getattr(book, "available_books", 0),
+                            "featured_book": getattr(book, "featured_book", False),
+                            "cover_url": getattr(book, "cover_url", None)
+                        }
+                        validated_books.append({
                             "id": str(book_data.get("id", "0")),
                             "title": book_data.get("title", "Unknown"),
                             "author": book_data.get("author", "Unknown"),
@@ -643,80 +467,61 @@ class ChatBot:
                             "available_books": int(book_data.get("available_books", 0)),
                             "featured_book": bool(book_data.get("featured_book", False)),
                             "cover_url": book_data.get("cover_url")
-                        }
-                        validated_books.append(validated_book)
-                
+                        })
 
-
-
-                # Process article recommendations
+                validated_articles = []
                 if response.recommended_articles:
-                    # Extract article identifiers from LLM response
-                    llm_article_identifiers = []
                     for article in response.recommended_articles:
-                        if isinstance(article, dict):
-                            article_id = article.get("id", "0")
-                        else:
-                            article_id = getattr(article, "id", "0")
-                        llm_article_identifiers.append(article_id)
-                    
-                    logger.debug(f"LLM recommended article IDs: {llm_article_identifiers}")
-                    
-                    # Process each article identifier
-                    for article_identifier in llm_article_identifiers:
+                        article_id_str = str(article.get("id", "0") if isinstance(article, dict) else getattr(article, "id", "0"))
+                        article_id_int = int(article_id_str) if article_id_str.isdigit() else None
                         article_info = None
+                        # Check both string and integer ID in article_data_by_id
+                        if article_id_str in article_data_by_id:
+                            article_info = article_data_by_id[article_id_str]
+                        elif article_id_int is not None and article_id_int in article_data_by_id:
+                            article_info = article_data_by_id[article_id_int]
                         
-                        # Try different ways to find the article
-                        lookup_methods = [
-                            (str(article_identifier), article_data_by_id, "string ID"),
-                            (int(article_identifier) if str(article_identifier).isdigit() else None, article_data_by_id, "integer ID"),
-                            (str(article_identifier).lower(), article_data_by_slug, "slug"),
-                            (str(article_identifier).lower(), article_data_by_title, "title")
-                        ]
-                        
-                        for identifier, lookup_map, lookup_type in lookup_methods:
-                            if identifier is not None and identifier in lookup_map:
-                                article_info = lookup_map[identifier]
-                                logger.debug(f"Found article by {lookup_type}: {article_identifier}")
-                                break
-                        
-                        # If we still don't have an article, try partial matches
-                        if article_info is None:
-                            identifier_lower = str(article_identifier).lower()
-                            for slug, article in article_data_by_slug.items():
-                                if slug in identifier_lower or identifier_lower in slug:
-                                    article_info = article
-                                    logger.debug(f"Found article by partial slug match: {identifier_lower} matched with {slug}")
-                                    break
-                        
-                        # If we found an article, add it to our recommendations
                         if article_info:
-                            # Create a validated article with all the correct data
-                            validated_article = {
-                                "id": article_info.get("id", "0"),
-                                "slug": article_info.get("slug", "unknown"),
-                                "title": article_info.get("title", "Unknown"),
-                                "author": article_info.get("author", "Unknown"),
-                                "category": article_info.get("category", "Unknown"),
-                                "summary": article_info.get("summary", "No summary"),
-                                "pdf_url": article_info.get("pdf_url", ""),
-                                "cover_image_url": article_info.get("cover_image_url", "https://placehold.co/600x300"),
-                                "read_time": int(article_info.get("read_time", 5)),
-                                "views": int(article_info.get("views", 0)),
-                                "likes": int(article_info.get("likes", 0))
-                            }
-                            
-                            # Log the article we're adding
-                            logger.debug(f"Adding article: ID={validated_article['id']}, pdf_url='{validated_article['pdf_url']}', cover_image_url='{validated_article['cover_image_url']}'")
-                            
-                            validated_articles.append(validated_article)
+                            validated_articles.append({
+                                "id": article_info["id"],
+                                "slug": article_info["slug"],
+                                "title": article_info["title"],
+                                "author": article_info["author"],
+                                "category": article_info["category"],
+                                "summary": article_info["summary"],
+                                "pdf_url": article_info["pdf_url"],
+                                "cover_image_url": article_info["cover_image_url"],
+                                "read_time": int(article_info["read_time"]),
+                                "views": int(article_info["views"]),
+                                "likes": int(article_info["likes"])
+                            })
+                            logger.debug(f"Validated article ID: {article_info['id']}")
                         else:
-                            logger.warning(f"Article identifier '{article_identifier}' not found in any of our data maps")
-                
-                # Log final recommendations count
-                logger.debug(f"Final recommendations: {len(validated_books)} books, {len(validated_articles)} articles")
-                
-                # Return the result
+                            logger.warning(f"Article ID {article_id_str} not found in retrieved data, skipping")
+                            # Attempt to fetch from database as a fallback
+                            with self.app.app_context():
+                                try:
+                                    article_obj = db.session.query(Article).get(int(article_id_str))
+                                    if article_obj:
+                                        validated_articles.append({
+                                            "id": str(article_obj.id),
+                                            "slug": article_obj.slug or "unknown",
+                                            "title": article_obj.title or "Unknown",
+                                            "author": article_obj.author.name if article_obj.author else "Unknown",
+                                            "category": article_obj.category or "Unknown",
+                                            "summary": article_obj.summary or "No summary",
+                                            "pdf_url": article_obj.pdf_url or "",
+                                            "cover_image_url": article_obj.cover_image_url or "https://placehold.co/600x300",
+                                            "read_time": article_obj.meta.read_time if article_obj.meta else 5,
+                                            "views": article_obj.meta.views if article_obj.meta else 0,
+                                            "likes": article_obj.meta.likes_count if article_obj.meta else 0
+                                        })
+                                        logger.info(f"Recovered article ID {article_id_str} from database")
+                                    else:
+                                        logger.warning(f"Article ID {article_id_str} not found in database")
+                                except Exception as e:
+                                    logger.error(f"Database query for article ID {article_id_str} failed: {str(e)}")
+
                 return {
                     "messages": [AIMessage(content=response.answer, additional_kwargs={
                         "follow_up_question": response.follow_up_question,
@@ -731,9 +536,9 @@ class ChatBot:
                 return {
                     "messages": [AIMessage(content="Sorry, I couldn't process your request due to an internal error.")]
                 }
-        
-        
-        
+
+
+
         builder = StateGraph(MessagesState)
         builder.add_node("query_or_respond", query_or_respond)
         builder.add_node("tools", ToolNode(self.get_tools()))
@@ -742,29 +547,78 @@ class ChatBot:
         builder.add_conditional_edges("query_or_respond", tools_condition, {END: END, "tools": "tools"})
         builder.add_edge("tools", "generate")
         builder.add_edge("generate", END)
-
         return builder.compile(checkpointer=MemorySaver())
+
 
     def chat_with_user(self, user_input: str, thread_id: str) -> ChatResponse:
         config = {"configurable": {"thread_id": thread_id}}
         message = {"messages": [HumanMessage(content=user_input)]}
-
         final_response = None
-
         for step in self.graph.stream(message, stream_mode="values", config=config):
             last_message = step["messages"][-1]
             if last_message.type == "ai":
-                recommended_books = last_message.additional_kwargs.get("recommended_books", None)
-                recommended_articles = last_message.additional_kwargs.get("recommended_articles", None)
-                
-                final_response = ChatResponse(
-                    answer=last_message.content,
-                    follow_up_question=last_message.additional_kwargs.get("follow_up_question", ""),
-                    recommended_books=recommended_books,
-                    recommended_articles=recommended_articles
-                )
-
-        # Fallback response if something went wrong
+                recommended_books = last_message.additional_kwargs.get("recommended_books", [])
+                recommended_articles = last_message.additional_kwargs.get("recommended_articles", [])
+                with self.app.app_context():
+                    validated_books = []
+                    if recommended_books:
+                        book_ids_to_check = [int(book["id"]) for book in recommended_books if book["id"] not in self._id_cache]
+                        if book_ids_to_check:
+                            valid_book_ids = {b.id for b in db.session.query(Book.id).filter(Book.id.in_(book_ids_to_check)).all()}
+                            self._id_cache.update({str(id_): id_ in valid_book_ids for id_ in book_ids_to_check})
+                        for book in recommended_books:
+                            book_id = int(book["id"])
+                            if self._id_cache.get(str(book_id), False):
+                                validated_books.append(book)
+                            else:
+                                logger.error(f"Invalid book ID {book_id} in recommendations - possible hallucination or database mismatch")
+                    validated_articles = []
+                    if recommended_articles:
+                        article_ids_to_check = [int(article["id"]) for article in recommended_articles if str(article["id"]) not in self._id_cache]
+                        if article_ids_to_check:
+                            try:
+                                valid_article_ids = {a.id for a in db.session.query(Article.id).filter(Article.id.in_(article_ids_to_check)).all()}
+                                self._id_cache.update({str(id_): id_ in valid_article_ids for id_ in article_ids_to_check})
+                            except Exception as e:
+                                logger.error(f"Database query for article IDs failed: {str(e)}")
+                                valid_article_ids = set()
+                        for article in recommended_articles:
+                            article_id = int(article["id"])
+                            if self._id_cache.get(str(article_id), False):
+                                validated_articles.append(article)
+                            else:
+                                logger.error(f"Invalid article ID {article_id} in recommendations - possible hallucination or database mismatch")
+                                logger.debug(f"Article details: {article}")
+                    # Refresh vector store for article queries with no valid results
+                    if not validated_articles and "article" in user_input.lower():
+                        logger.warning("No valid articles found for article query; refreshing vector store...")
+                        try:
+                            self.vector_store = self.load_content_from_db()
+                            # Retry the query
+                            retry_response = self.graph.invoke({"messages": [HumanMessage(content=user_input)]}, config=config)
+                            retry_message = retry_response["messages"][-1]
+                            recommended_articles = retry_message.additional_kwargs.get("recommended_articles", [])
+                            article_ids_to_check = [int(article["id"]) for article in recommended_articles if str(article["id"]) not in self._id_cache]
+                            if article_ids_to_check:
+                                valid_article_ids = {a.id for a in db.session.query(Article.id).filter(Article.id.in_(article_ids_to_check)).all()}
+                                self._id_cache.update({str(id_): id_ in valid_article_ids for id_ in article_ids_to_check})
+                            validated_articles = [
+                                article for article in recommended_articles
+                                if int(article["id"]) in {a.id for a in db.session.query(Article.id).all()}
+                            ]
+                            logger.info(f"Retry returned {len(validated_articles)} articles")
+                        except Exception as e:
+                            logger.error(f"Vector store refresh failed: {str(e)}")
+                    if not validated_books and recommended_books:
+                        logger.warning("All recommended books were invalid; returning empty book recommendations")
+                    if not validated_articles and recommended_articles:
+                        logger.warning("All recommended articles were invalid; returning empty article recommendations")
+                    final_response = ChatResponse(
+                        answer=last_message.content if validated_books or validated_articles else "I couldn't find any relevant articles in the library database.",
+                        follow_up_question=last_message.additional_kwargs.get("follow_up_question", "Can I help you with a specific topic or category?"),
+                        recommended_books=validated_books or None,
+                        recommended_articles=validated_articles or None
+                    )
         if not final_response:
             final_response = ChatResponse(
                 answer="Sorry, I couldn't process your request.",
@@ -772,8 +626,8 @@ class ChatBot:
                 recommended_books=None,
                 recommended_articles=None
             )
-
         return final_response.model_dump_json(indent=2)
+    
     
     
     

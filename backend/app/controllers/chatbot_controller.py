@@ -42,32 +42,29 @@ def process_message():
             recommended_books = response_data.get("recommended_books", [])
             recommended_articles = response_data.get("recommended_articles", [])
             combined_response = answer
-            if follow_up_question:
-                combined_response += f"\n\n{follow_up_question}"
+
             if recommended_books is None:
                 recommended_books = []
             if recommended_articles is None:
                 recommended_articles = []
-                
-            # Save the chat message with the original data
-            chatbot_service._save_chat_message(
-                user_id=user_id,
-                message=message,
-                response=combined_response,
-                language=language,
-                book_recommendations=recommended_books,
-                article_recommendations=recommended_articles
-            )
-            
-            # DEBUG: Log what we're receiving for articles
+
+            # DEBUG: Log the number of books and articles received
+            logger.debug(f"Received {len(recommended_books)} books and {len(recommended_articles)} articles from chat_with_user")
+
+            # DEBUG: Log book data before formatting
+            if recommended_books:
+                for i, book in enumerate(recommended_books):
+                    logger.debug(f"Book {i} data before formatting: {json.dumps(book)}")
+
+            # DEBUG: Log article data before formatting
             if recommended_articles:
                 for i, article in enumerate(recommended_articles):
                     logger.debug(f"Article {i} data before formatting: {json.dumps(article)}")
-            
+
             if recommended_books:
                 formatted_book_recommendations = []
                 for book in recommended_books:
-                    formatted_book_recommendations.append({
+                    formatted_book = {
                         'id': book.get('id', 0),
                         'title': book.get('title', ''),
                         'author': book.get('author', ''),
@@ -81,13 +78,15 @@ def process_message():
                         'featured_book': book.get('featured_book', False),
                         'borrow_count': book.get('borrow_count', 0),
                         'reason': ''
-                    })
+                    }
+                    # DEBUG: Log formatted book
+                    logger.debug(f"Formatted book: id={formatted_book['id']}, title={formatted_book['title']}")
+                    formatted_book_recommendations.append(formatted_book)
                 recommended_books = formatted_book_recommendations
-                
+
             if recommended_articles:
                 formatted_article_recommendations = []
                 for article in recommended_articles:
-                    # CRITICAL FIX: Ensure we preserve the exact values from the chatbot response
                     formatted_article = {
                         'id': article.get('id', 0),
                         'slug': article.get('slug', ''),
@@ -102,14 +101,25 @@ def process_message():
                         'likes': int(article.get('likes', 0)),
                         'reason': ''
                     }
-                    # DEBUG: Log what we're returning for this article
+                    # DEBUG: Log formatted article
                     logger.debug(f"Formatted article: pdf_url={formatted_article['pdf_url']}, cover_image_url={formatted_article['cover_image_url']}")
                     formatted_article_recommendations.append(formatted_article)
                 recommended_articles = formatted_article_recommendations
-                
+
+            # Save the chat message with the original data
+            chatbot_service._save_chat_message(
+                user_id=user_id,
+                message=message,
+                response=combined_response,
+                language=language,
+                book_recommendations=recommended_books,
+                article_recommendations=recommended_articles,
+                follow_up_question=follow_up_question
+            )
+
             # DEBUG: Log the final response shape
-            logger.debug(f"Final response contains {len(recommended_articles)} articles")
-            
+            logger.debug(f"Final response contains {len(recommended_books)} books and {len(recommended_articles)} articles")
+
             return jsonify({
                 'response': combined_response,
                 'language': language,
@@ -131,8 +141,6 @@ def process_message():
     except Exception as e:
         logger.error(f"Critical error in process_message: {str(e)}")
         return jsonify({'error': 'Server error processing message'}), 500
-
-
 
 @chatbot_controller.route('/history', methods=['GET'])
 @jwt_required()
@@ -208,7 +216,3 @@ def health_check():
                 'error': str(e)
             }
         }), 500
-        
-        
-        
-        
