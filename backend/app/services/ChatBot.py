@@ -1,3 +1,4 @@
+import json
 import os
 import traceback
 import logging
@@ -81,6 +82,7 @@ class ChatBot:
             return
         self.app = app
         self.llm = init_chat_model("gpt-4o-mini", model_provider="openai")
+        # self.llm = init_chat_model("grok", model_provider="xai")
         self.embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
         self.vector_store = self.load_content_from_db()
         self.graph = self.create_graph()
@@ -280,7 +282,46 @@ class ChatBot:
 
 
 
-    def create_graph(self):
+
+    # Helper methods for formatting data
+    def _format_book_data(self, book):
+        try:
+            authors_text = ", ".join([author.name for author in book.authors]) if book.authors else "Unknown"
+            categories_text = ", ".join([category.name for category in book.categories]) if book.categories else "Unknown"
+            
+            return {
+                "id": str(book.id),
+                "title": book.title or "Unknown",
+                "author": authors_text,
+                "category": categories_text,
+                "rating": float(book.rating) if book.rating is not None else 0.0,
+                "cover_url": book.cover_url or ""
+            }
+        except Exception as e:
+            logger.error(f"Error formatting book data: {str(e)}")
+            return None
+    
+    def _format_article_data(self, article):
+        try:
+            return {
+                "id": str(article.id),
+                "slug": article.slug or "unknown",
+                "title": article.title or "Unknown",
+                "author": article.author.name if article.author else "Unknown",
+                "category": article.category or "Unknown",
+                "views": article.meta.views if article.meta else 0,
+                "likes": article.meta.likes_count if article.meta else 0
+            }
+        except Exception as e:
+            logger.error(f"Error formatting article data: {str(e)}")
+            return None
+    
+    
+
+
+    def get_tools(self):
+        """Returns all available tools for the chatbot."""
+        
         @tool(response_format="content_and_artifact")
         def retrieve(query: str):
             """Retrieve information related to a query."""
@@ -395,17 +436,166 @@ class ChatBot:
             logger.debug(f"Returning {len(books)} books and {len(articles)} articles")
             return message.content, message.additional_kwargs["artifacts"]
 
+        @tool()
+        def get_categories(item_type: str = "all"):
+            """
+            Get available categories for books or articles.
+            
+            Args:
+                item_type: Type of items to get categories for. Options: "books", "articles", or "all" (default).
+            
+            Returns:
+                List of category names and counts.
+            """
+            logger.info(f"Getting categories for: {item_type}")
+            categories = {}
+            
+            with self.app.app_context():
+                try:
+                    if item_type.lower() in ["books", "all"]:
+                        # Get book categories
+                        from app.model.Category import Category
+                        book_categories = db.session.query(Category).all()
+                        for cat in book_categories:
+                            if cat.name not in categories:
+                                categories[cat.name] = {"count": 0, "type": "book"}
+                            categories[cat.name]["count"] += len(cat.books)
+                    
+                    if item_type.lower() in ["articles", "all"]:
+                        # Get article categories
+                        article_categories = db.session.query(Article.category, db.func.count(Article.id)).\
+                            group_by(Article.category).all()
+                        for cat_name, count in article_categories:
+                            if cat_name and cat_name.strip():
+                                if cat_name not in categories:
+                                    categories[cat_name] = {"count": 0, "type": "article"}
+                                categories[cat_name]["count"] += count
+                    
+                    # Convert to list format
+                    result = [{"name": name, "count": info["count"], "type": info["type"]} 
+                            for name, info in categories.items()]
+                    
+                    return f"Available categories: {json.dumps(result, indent=2)}"
+                except Exception as e:
+                    logger.error(f"Error fetching categories: {str(e)}")
+                    return "Error fetching categories."
+        
+        @tool()
+        def search_by_category(category: str, item_type: str = "all", limit: int = 5):
+            """
+            Search for items in a specific category.
+            
+            Args:
+                category: Category name to search for.
+                item_type: Type of items to search. Options: "books", "articles", or "all" (default).
+                limit: Maximum number of results to return (default: 5).
+            
+            Returns:
+                List of items in the specified category.
+            """
+            logger.info(f"Searching for {item_type} in category: {category}")
+            results = {"books": [], "articles": []}
+            
+            with self.app.app_context():
+                try:
+                    if item_type.lower() in ["books", "all"]:
+                        # Search books by category
+                        from app.model.Category import Category
+                        book_cats = db.session.query(Category).filter(Category.name.ilike(f"%{category}%")).all()
+                        for cat in book_cats:
+                            for book in cat.books[:limit]:
+                                book_data = self._format_book_data(book)
+                                if book_data:
+                                    results["books"].append(book_data)
+                    
+                    if item_type.lower() in ["articles", "all"]:
+                        # Search articles by category
+                        articles = db.session.query(Article).\
+                            filter(Article.category.ilike(f"%{category}%")).\
+                            limit(limit).all()
+                        
+                        for article in articles:
+                            article_data = self._format_article_data(article)
+                            if article_data:
+                                results["articles"].append(article_data)
+                    
+                    return f"Category search results: {json.dumps(results, indent=2)}"
+                except Exception as e:
+                    logger.error(f"Error searching by category: {str(e)}")
+                    return "Error searching by category."
+        
+        @tool()
+        def get_popular_items(item_type: str = "all", limit: int = 3):
+            """
+            Get popular books or articles.
+            
+            Args:
+                item_type: Type of items to get. Options: "books", "articles", or "all" (default).
+                limit: Maximum number of results to return (default: 3).
+            
+            Returns:
+                List of popular items.
+            """
+            logger.info(f"Getting popular {item_type}, limit: {limit}")
+            results = {"books": [], "articles": []}
+            
+            with self.app.app_context():
+                try:
+                    if item_type.lower() in ["books", "all"]:
+                        # Get popular books (by rating and borrow count)
+                        books = db.session.query(Book).\
+                            order_by(Book.rating.desc(), Book.borrow_count.desc()).\
+                            limit(limit).all()
+                        
+                        for book in books:
+                            book_data = self._format_book_data(book)
+                            if book_data:
+                                results["books"].append(book_data)
+                    
+                    if item_type.lower() in ["articles", "all"]:
+                        # Get popular articles (by views and likes)
+                        from app.model.ArticleMeta import ArticleMeta
+                        articles = db.session.query(Article).\
+                            join(ArticleMeta, Article.id == ArticleMeta.article_id).\
+                            order_by(ArticleMeta.views.desc(), ArticleMeta.likes_count.desc()).\
+                            limit(limit).all()
+                        
+                        for article in articles:
+                            article_data = self._format_article_data(article)
+                            if article_data:
+                                results["articles"].append(article_data)
+                    
+                    return f"Popular items: {json.dumps(results, indent=2)}"
+                except Exception as e:
+                    logger.error(f"Error fetching popular items: {str(e)}")
+                    return "Error fetching popular items."
+        
+        # Return all tools as a list
+        return [retrieve, get_categories, search_by_category, get_popular_items]
+
+
+
+    def create_graph(self):
+        # Get all tools
+        tools = self.get_tools()
+        
         def query_or_respond(state: MessagesState):
-            llm_with_tools = self.llm.bind_tools([retrieve])
+            llm_with_tools = self.llm.bind_tools(tools)
             response = llm_with_tools.invoke(state["messages"])
             return {"messages": [response]}
-
+        
         def generate(state: MessagesState):
             try:
+                # Extract tool messages
                 tool_messages = [m for m in state["messages"] if m.type == "tool"]
-                docs_content = "\n\n".join(msg.content for msg in tool_messages if hasattr(msg, "content"))
                 
-                # Extract all documents from tool messages
+                # Collect all tool outputs for the system message
+                tool_outputs = []
+                for msg in tool_messages:
+                    if hasattr(msg, "content"):
+                        tool_outputs.append(f"Tool output: {msg.content}")
+                
+                # Extract book and article data
                 all_books = []
                 all_articles = []
                 for msg in tool_messages:
@@ -415,47 +605,41 @@ class ChatBot:
                         all_books.extend(books)
                         all_articles.extend(articles)
                 
-                # Create dictionaries for direct lookups
-                book_data_by_id = {}
-                for book in all_books:
-                    book_id_str = str(book.get("id", "0"))
-                    book_data_by_id[book_id_str] = book
-                    if book_id_str.isdigit():
-                        book_data_by_id[int(book_id_str)] = book
+                # Create lookup dictionaries
+                book_data_by_id = {str(book.get("id", "0")): book for book in all_books}
+                article_data_by_id = {str(article.get("id", "0")): article for article in all_articles}
                 
-                article_data_by_id = {}
-                for article in all_articles:
-                    article_id_str = str(article.get("id", "0"))
-                    article_data_by_id[article_id_str] = article
-                    if article_id_str.isdigit():
-                        article_data_by_id[int(article_id_str)] = article
+                # Combine all tool outputs into a single string
+                tools_output = "\n\n".join(tool_outputs)
                 
-                logger.debug(f"Built book dictionary with {len(book_data_by_id)} entries")
-                logger.debug(f"Built article dictionary with {len(article_data_by_id)} entries")
-                
-                # System message to guide the LLM
+                # Create system message that includes tool outputs
                 system_message = SystemMessage(
                     content=(
                         "You are YOA+, a smart library assistant for LMSENSA+.\n"
-                        "Your primary goal is to help users find relevant books and articles.\n\n"
+                        "Your primary goal is to help users find relevant books and articles in our library database.\n\n"
                         "CRITICAL INSTRUCTIONS:\n"
                         "1. NEVER invent or hallucinate books or articles - only use what's in the database search results.\n"
-                        "2. ONLY recommend books and articles explicitly present in the database search results.\n"
+                        "2. ONLY recommend books and articles explicitly present in the tools output or database search results.\n"
                         "3. If relevant items are found, feature them prominently in your response.\n"
                         "4. Keep your 'answer' field CONCISE (2-3 sentences) and focus on acknowledging what you found.\n"
-                        "5. When the user asks about articles, check if there are ANY articles in the database results. "
-                        "   If NO ACTUAL ARTICLES are present (only books), inform the user that we don't have articles "
-                        "   on that topic and recommend books instead.\n"
-                        "6. All details must appear in the structured fields (recommended_books and recommended_articles).\n"
-                        "7. Make follow-up questions relevant to the user's query or the recommendations provided.\n"
-                        "8. IMPORTANT: When recommending, distinguish between books and articles carefully - "
-                        "9. ALWAYS limit your recommendations to a MAXIMUM of 3 items total. If the search returns more than 3 books or articles, select only the 3 most relevant ones based on the user's query.\n"
-                        "   Actual articles have 'Type: Article' and 'Article ID:' in their content. "
-                        "   Items with 'Type: Book' are BOOKS, not articles, even if their title contains the word 'Article'.\n\n"
-                        
-                        f"DATABASE SEARCH RESULTS:\n{docs_content}"
+                        "6. When the user asks about articles, check if there are ANY articles in the database results.\n"
+                        "   If NO ACTUAL ARTICLES are present, inform the user and recommend books instead.\n"
+                        "7. All details must appear in the structured fields (recommended_books and recommended_articles).\n"
+                        "8. Make follow-up questions relevant to the user's query or the recommendations provided.\n"
+                        "9. IMPORTANT: When recommending, distinguish between books and articles carefully.\n"
+                        "10. NEVER include cover image URLs (cover_url or cover_image_url) in the 'answer' field. Cover images must only appear in the 'recommended_books' and 'recommended_articles' structured fields."
+                        "11. ALWAYS limit your recommendations to a MAXIMUM of 3 items total. If you have more than 3 items,\n"
+                        "   select only the 3 most relevant ones based on the user's query.\n\n"
+                        "AVAILABLE TOOLS:\n"
+                        "- retrieve: Search for books and articles based on keywords\n"
+                        "- get_categories: Get all available categories of books and articles\n"
+                        "- search_by_category: Search for books or articles within a specific category\n"
+                        "- get_popular_items: Get the most popular books or articles\n\n"
+                        f"TOOLS OUTPUT:\n{tools_output}\n\n"
+                        f"DATABASE SEARCH RESULTS:\n{len(all_books)} books and {len(all_articles)} articles found."
                     )
                 )
+                
 
                 convo = [
                     msg for msg in state["messages"]
@@ -635,6 +819,8 @@ class ChatBot:
                     except Exception as e:
                         logger.error(f"Error in secondary article search: {str(e)}")
 
+
+                
                 # Create the final response
                 return {
                     "messages": [AIMessage(content=response.answer, additional_kwargs={
@@ -650,18 +836,17 @@ class ChatBot:
                     "messages": [AIMessage(content="Sorry, I couldn't process your request due to an internal error.")]
                 }
         
-
+        # Build the graph
         builder = StateGraph(MessagesState)
         builder.add_node("query_or_respond", query_or_respond)
-        builder.add_node("tools", ToolNode([retrieve]))
+        builder.add_node("tools", ToolNode(tools))
         builder.add_node("generate", generate)
         builder.set_entry_point("query_or_respond")
         builder.add_conditional_edges("query_or_respond", tools_condition, {END: END, "tools": "tools"})
         builder.add_edge("tools", "generate")
         builder.add_edge("generate", END)
+        
         return builder.compile(checkpointer=MemorySaver())
-
-
     
     
     def chat_with_user(self, user_input: str, thread_id: str) -> ChatResponse:
