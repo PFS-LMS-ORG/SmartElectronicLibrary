@@ -17,12 +17,23 @@ from langgraph.graph import MessagesState
 from langgraph.prebuilt import ToolNode, tools_condition
 from langchain.chat_models import init_chat_model
 from pydantic import BaseModel, Field
-from typing import List, Optional
-from sqlalchemy import event
+from typing import Any, Dict, List, Optional
+from sqlalchemy import event, or_
+from sqlalchemy.orm import joinedload
 from app import db
 from app.model.Book import Book
 from app.model.Article import Article
+from app.model.ArticleMeta import ArticleMeta
+from app.model.ChatMessage import ChatMessage
+from app.model.ArticleAuthor import ArticleAuthor
+from app.model.Author import Author
+from app.services.UserService import UserService
+from app.services.RentalRequestService import RentalRequestService
+from app.services.NotificationService import NotificationService
+from app.services.EmailService import EmailService
+from app.services.BookService import BookService
 import gc
+
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -72,14 +83,22 @@ class ChatBot:
     private_instance = None
     _initialized = False
 
-    def __new__(cls, app=None):
+    def __new__(cls, app=None, user_id=None):
         if cls.private_instance is None:
             cls.private_instance = super(ChatBot, cls).__new__(cls)
         return cls.private_instance
 
-    def __init__(self, app=None):
+    def __init__(self, app=None, user_id=None):
+        if self._initialized and user_id is None:
+            return
+        
+        self.user_id = user_id
+        
+        # Only initialize once
         if self._initialized:
             return
+        
+        
         self.app = app
         self.llm = init_chat_model("gpt-4o-mini", model_provider="openai")
         # self.llm = init_chat_model("grok", model_provider="xai")
@@ -570,8 +589,510 @@ class ChatBot:
                     logger.error(f"Error fetching popular items: {str(e)}")
                     return "Error fetching popular items."
         
+        
+        @tool()
+        def user_preferences(action: str = "get", preferences: Optional[Dict[str, Any]] = None) -> str:
+            """
+            Manage user preferences for personalized recommendations.
+            
+            Args:
+                action: "get" to retrieve preferences, "set" to update preferences.
+                preferences: Dictionary of preferences (e.g., {"favorite_categories": ["Fiction"], "preferred_authors": ["Jane Austen"]}) for "set" action.
+            
+            Returns:
+                String with preferences data or confirmation message.
+            """
+            
+            user_id = self.user_id
+            if not user_id:
+                return "No user associated with this chatbot. Please ensure you're logged in."
+            
+            logger.info(f"Managing preferences for user {user_id}, action: {action}")
+            with self.app.app_context():
+                try:
+                    user = UserService.get_user_by_id(user_id)
+                    if not user:
+                        return "User not found."
+                    
+                    if action == "get":
+                        profile = UserService.get_user_profile(user_id)
+                        if not profile:
+                            return "No preferences found."
+                        return json.dumps({
+                            "favorite_category": profile["stats"]["favorite_category"],
+                            "books_read": profile["stats"]["books_read"],
+                            "liked_articles": [a["id"] for a in profile["liked_articles"]],
+                            "bookmarked_articles": [a["id"] for a in profile["bookmarked_articles"]]
+                        }, indent=2)
+                    
+                    elif action == "set" and preferences:
+                        # Store preferences in ChatMessage for simplicity
+                        message = ChatMessage(
+                            user_id=user_id,
+                            message="User updated preferences",
+                            response=json.dumps(preferences),
+                            book_recommendations=None,
+                            article_recommendations=None
+                        )
+                        db.session.add(message)
+                        db.session.commit()
+                        return "Preferences updated successfully."
+                    else:
+                        return "Invalid action or missing preferences."
+                except Exception as e:
+                    logger.error(f"Error managing preferences: {str(e)}")
+                    return f"Error managing preferences: {str(e)}"
+        
+        
+        @tool()
+        def advanced_search(query: str, filters: Optional[Dict[str, Any]] = None, item_type: str = "all") -> str:
+            """
+            Perform an advanced search for books or articles with specific filters.
+            
+            Args:
+                query: Search string.
+                filters: Dictionary of filters (e.g., {"min_rating": 4.0, "author": "Jane Austen", "year": 2020}).
+                item_type: Type of items to search ("books", "articles", "all").
+            
+            Returns:
+                JSON string with search results.
+            """
+            logger.info(f"Advanced search: query={query}, filters={filters}, type={item_type}")
+            results = {"books": [], "articles": []}
+            
+            with self.app.app_context():
+                try:
+                    if item_type in ["books", "all"]:
+                        book_query = Book.query.options(joinedload(Book.authors), joinedload(Book.categories))
+                        if query:
+                            book_query = book_query.filter(Book.title.ilike(f"%{query}%"))
+                        if filters:
+                            if "min_rating" in filters:
+                                book_query = book_query.filter(Book.rating >= filters["min_rating"])
+                            if "author" in filters:
+                                book_query = book_query.join(Book.authors).filter(Author.name.ilike(f"%{filters['author']}%"))
+                            if "year" in filters:
+                                book_query = book_query.filter(db.extract("year", Book.created_at) == filters["year"])
+                        books = book_query.limit(3).all()
+                        results["books"] = [self._format_book_data(book) for book in books if self._format_book_data(book)]
+                    
+                    if item_type in ["articles", "all"]:
+                        article_query = Article.query.options(joinedload(Article.author), joinedload(Article.meta))
+                        if query:
+                            article_query = article_query.filter(Article.title.ilike(f"%{query}%"))
+                        if filters:
+                            if "min_views" in filters:
+                                article_query = article_query.join(Article.meta).filter(ArticleMeta.views >= filters["min_views"])
+                            if "author" in filters:
+                                article_query = article_query.join(Article.author).filter(ArticleAuthor.name.ilike(f"%{filters['author']}%"))
+                            if "year" in filters:
+                                article_query = article_query.filter(db.extract("year", Article.created_at) == filters["year"])
+                        articles = article_query.limit(3).all()
+                        results["articles"] = [self._format_article_data(article) for article in articles if self._format_article_data(article)]
+                    
+                    return json.dumps(results, indent=2)
+                except Exception as e:
+                    logger.error(f"Error in advanced search: {str(e)}")
+                    return f"Error searching: {str(e)}"
+        
+        
+        @tool()
+        def borrow_book(book_id: int) -> str:
+            """
+            Initiate a book borrowing request for a user.
+            
+            Args:
+                book_id: ID of the book to borrow.
+
+            Returns:
+                Confirmation message or error.
+            """
+            
+            user_id = self.user_id
+            if not user_id:
+                return "No user associated with this chatbot. Please ensure you're logged in."
+            
+            logger.info(f"Borrowing book {book_id} for user {user_id}")
+            with self.app.app_context():
+                try:
+                    request = RentalRequestService.create_request(user_id, book_id)
+                    NotificationService.create_notification(
+                        user_id=user_id,
+                        type="info",
+                        message=f"Your request to borrow '{request['book']['title']}' has been submitted."
+                    )
+                    EmailService().send_email(
+                        to_email=UserService.get_user_by_id(user_id).email,
+                        notification_type="borrow",
+                        params={"action": "borrow", "book_title": request["book"]["title"]}
+                    )
+                    return f"Borrow request for book ID {book_id} submitted successfully."
+                except ValueError as e:
+                    logger.error(f"Error borrowing book: {str(e)}")
+                    return f"Error: {str(e)}"
+                except Exception as e:
+                    logger.error(f"Unexpected error: {str(e)}")
+                    return "Internal server error."
+        
+        @tool()
+        def cancel_borrow_request(request_id: int) -> str:
+            """
+            Cancels a pending book borrow request.
+            
+            Args:
+                request_id: ID of the rental request to cancel.
+            
+            Returns:
+                Confirmation message or error.
+            """
+            user_id = self.user_id
+            if not user_id:
+                return "You need to be logged in to cancel borrow requests."
+                
+            logger.info(f"Cancelling borrow request {request_id} for user {user_id}")
+            with self.app.app_context():
+                try:
+                    result = RentalRequestService.cancel_request(request_id, user_id)
+                    
+                    if not result:
+                        return "No pending borrow request found with the given ID."
+                    
+                    # Send notification to user
+                    NotificationService.create_notification(
+                        user_id=user_id,
+                        type="info",
+                        message=f"Your borrow request (ID: {request_id}) has been cancelled successfully."
+                    )
+                    
+                    return f"Borrow request (ID: {request_id}) cancelled successfully."
+                except ValueError as e:
+                    logger.error(f"Error cancelling borrow request: {str(e)}")
+                    return f"Error: {str(e)}"
+                except Exception as e:
+                    logger.error(f"Unexpected error: {str(e)}")
+                    return "Internal server error. Please try again later."
+        
+        
+        @tool()
+        def get_user_borrow_requests(status: str = "pending", page: int = 1, per_page: int = 5) -> str:
+            """
+            Gets the current user's borrow requests.
+            
+            Args:
+                status: Filter by status. Can be "all", "pending", "approved", or "rejected".
+                page: Page number for pagination.
+                per_page: Number of requests per page.
+            
+            Returns:
+                JSON string with the user's borrow requests.
+            """
+            user_id = self.user_id
+            if not user_id:
+                return "You need to be logged in to view your borrow requests."
+                
+            logger.info(f"Getting borrow requests for user {user_id}, status: {status}")
+            with self.app.app_context():
+                try:
+                    # Get all user requests
+                    result = RentalRequestService.get_user_requests(user_id, page, per_page)
+                    
+                    # Filter by status if needed (already filtered in DB, but just in case)
+                    if status != "all":
+                        filtered_requests = [
+                            req for req in result["requests"] 
+                            if req["status"] == status
+                        ]
+                        result["requests"] = filtered_requests
+                        result["total_count"] = len(filtered_requests)
+                    
+                    # Format the results for better readability
+                    formatted_requests = []
+                    for req in result["requests"]:
+                        formatted_requests.append({
+                            "request_id": req["id"],
+                            "book_title": req["book"]["title"],
+                            "status": req["status"],
+                            "requested_at": req["requested_at"]
+                        })
+                    
+                    return json.dumps({
+                        "requests": formatted_requests,
+                        "total_count": result["total_count"],
+                        "total_pages": result["total_pages"],
+                        "current_page": page
+                    }, indent=2)
+                except Exception as e:
+                    logger.error(f"Error fetching borrow requests: {str(e)}")
+                    return f"Error fetching your borrow requests: {str(e)}"
+        
+        
+        @tool()
+        def article_fulltext_search(query: str) -> str:
+            """
+            Search articles by full text (summary, tags, title).
+            
+            Args:
+                query: Search string.
+            
+            Returns:
+                JSON string with article results.
+            """
+            logger.info(f"Full-text search for articles: {query}")
+            with self.app.app_context():
+                try:
+                    articles = Article.query.filter(
+                        or_(
+                            Article.title.ilike(f"%{query}%"),
+                            Article.summary.ilike(f"%{query}%"),
+                            Article.tags.contains([query])
+                        )
+                    ).options(joinedload(Article.author), joinedload(Article.meta)).limit(3).all()
+                    results = [self._format_article_data(article) for article in articles if self._format_article_data(article)]
+                    return json.dumps({"articles": results}, indent=2)
+                except Exception as e:
+                    logger.error(f"Error in full-text search: {str(e)}")
+                    return f"Error searching articles: {str(e)}"
+        
+        
+        @tool()
+        def trending_items(item_type: str = "all", limit: int = 3) -> str:
+            """
+            Get trending books or articles based on recent activity.
+            
+            Args:
+                item_type: Type of items ("books", "articles", "all").
+                limit: Maximum number of results.
+            
+            Returns:
+                JSON string with trending items.
+            """
+            logger.info(f"Fetching trending {item_type}, limit: {limit}")
+            results = {"books": [], "articles": []}
+            
+            with self.app.app_context():
+                try:
+                    if item_type in ["books", "all"]:
+                        books = BookService.get_popular_books(limit=limit)
+                        results["books"] = [self._format_book_data(book) for book in books if self._format_book_data(book)]
+                    
+                    if item_type in ["articles", "all"]:
+                        articles = Article.query.join(ArticleMeta).order_by(
+                            ArticleMeta.views.desc(), ArticleMeta.likes_count.desc()
+                        ).options(joinedload(Article.author), joinedload(Article.meta)).limit(limit).all()
+                        results["articles"] = [self._format_article_data(article) for article in articles if self._format_article_data(article)]
+                    
+                    return json.dumps(results, indent=2)
+                except Exception as e:
+                    logger.error(f"Error fetching trending items: {str(e)}")
+                    return f"Error fetching trending items: {str(e)}"
+        
+        
+        @tool()
+        def feedback_submission(message: str, rating: int) -> str:
+            """
+            Submit user feedback on chatbot interactions.
+            
+            Args:
+                message: Feedback message.
+                rating: Rating (1-5).
+            
+            Returns:
+                Confirmation message.
+            """
+            
+            user_id = self.user_id
+            if not user_id:
+                return "No user associated with this chatbot. Please ensure you're logged in."
+            
+            logger.info(f"Submitting feedback for user {user_id}, rating: {rating}")
+            with self.app.app_context():
+                try:
+                    if not (1 <= rating <= 5):
+                        return "Rating must be between 1 and 5."
+                    chat_message = ChatMessage(
+                        user_id=user_id,
+                        message=f"Feedback: {message}",
+                        response=f"Rating: {rating}",
+                        book_recommendations=None,
+                        article_recommendations=None
+                    )
+                    db.session.add(chat_message)
+                    db.session.commit()
+                    NotificationService.create_notification(
+                        user_id=user_id,
+                        type="info",
+                        message="Thank you for your feedback!"
+                    )
+                    return "Feedback submitted successfully."
+                except Exception as e:
+                    logger.error(f"Error submitting feedback: {str(e)}")
+                    return f"Error submitting feedback: {str(e)}"
+        
+        
+        @tool()
+        def event_recommendations(limit: int = 3) -> str:
+            """
+            Recommend library events based on user preferences.
+            
+            Args:
+                limit: Maximum number of events to return.
+
+            Returns:
+                JSON string with event recommendations (mocked for now).
+            """
+            
+            user_id = self.user_id
+            if not user_id:
+                return "No user associated with this chatbot. Please ensure you're logged in."
+            
+            logger.info(f"Fetching event recommendations for user {user_id}, limit: {limit}")
+            with self.app.app_context():
+                try:
+                    profile = UserService.get_user_profile(user_id)
+                    if not profile:
+                        return "User not found."
+                    
+                    # Mock events (since no Event model exists)
+                    mock_events = [
+                        {"id": 1, "name": "Sci-Fi Book Club", "category": "Science Fiction", "date": "2025-06-01"},
+                        {"id": 2, "name": "Jane Austen Talk", "category": "Classics", "date": "2025-06-15"},
+                        {"id": 3, "name": "Tech Article Review", "category": "Technology", "date": "2025-06-20"}
+                    ]
+                    favorite_category = profile["stats"]["favorite_category"] or "General"
+                    events = [e for e in mock_events if favorite_category in e["category"] or e["category"] == "General"][:limit]
+                    
+                    NotificationService.create_notification(
+                        user_id=user_id,
+                        type="info",
+                        message="Check out these upcoming library events!"
+                    )
+                    return json.dumps({"events": events}, indent=2)
+                except Exception as e:
+                    logger.error(f"Error fetching events: {str(e)}")
+                    return f"Error fetching events: {str(e)}"
+        
+        
+        
+        @tool()
+        def system_info(info_type: str = "all") -> str:
+            """
+            Provides global information about the library system for reference.
+            
+            Args:
+                info_type: Type of information to return. Options: "all", "urls", "library", "developers", "hours", "chatbot", "markdown_templates".
+            
+            Returns:
+                JSON string with system information based on the requested type.
+            """
+            logger.info(f"Getting system info of type: {info_type}")
+            
+            # Define all system information
+            system_data = {
+                "urls": {
+                    "book_details": "localhost:5173/book/{id}",
+                    "article_details": "localhost:5173/articles/{slug}",
+                    "home": "localhost:5173/",
+                    "profile": "localhost:5173/profile"
+                },
+                "library": {
+                    "name": "LMSENSA+",
+                    "full_name": "Library Management System for ENSA Marrakech",
+                    "description": "A smart library system dedicated for ENSA Marrakech students (Computer science students)",
+                    "location": "ENSA Marrakech, Morocco",
+                    "email": "library@ensa.ac.ma",
+                    "phone": "+212-5XX-XXXXXX"
+                },
+                "chatbot": {
+                    "name": "YOA+",
+                    "description": "YOA+ (named after Youness, Omar, and Ali) is the smart library assistant for LMSENSA+",
+                    "capabilities": [
+                        "Book and article search and recommendations",
+                        "Category browsing",
+                        "Borrow requests management",
+                        "Personalized recommendations",
+                        "Library information assistance"
+                    ],
+                    "version": "1.0.0"
+                },
+                "hours": {
+                    "normal_days": {
+                        "days": "Monday to Friday",
+                        "morning": "9:00 AM - 12:00 PM",
+                        "afternoon": "12:00 PM - 5:30 PM"
+                    },
+                    "ramadan": {
+                        "days": "Monday to Friday",
+                        "hours": "10:00 AM - 4:00 PM"
+                    },
+                    "weekend": "Closed",
+                    "holidays": "Closed",
+                    "special_notes": "The library may have reduced hours during exam periods and holidays. Please check the website for updates."
+                },
+                "developers": {
+                    "team": [
+                        {
+                            "name": "Omar",
+                            "role": "Backend Developer & AI Integration",
+                            "email": "omarfortest13@gmail.com",
+                            "github": "github.com/Adamo08"
+                        },
+                        {
+                            "name": "Ali",
+                            "role": "Frontend Developer & UI/UX Designer",
+                            "email": "ali.test@gmail.com",
+                            "github": "github.com/Ali-desu"
+                        },
+                        {
+                            "name": "Youness",
+                            "role": "Database Engineer & DevOps",
+                            "email": "youness@gmail.com",
+                            "github": "github.com/youneselhafidy"
+                        }
+                    ],
+                    "project": {
+                        "github": "github.com/PFS-LMS-ORG/SmartElectronicLibrary",
+                        "started": "March 2025",
+                        "tech_stack": [
+                            "Python (Flask) Backend",
+                            "React (TypeScript) Frontend",
+                            "PostgreSQL Database",
+                            "LangChain + OpenAI for AI features"
+                        ]
+                    }
+                },
+                "markdown_templates": {
+                    "book_link": "[{title}](localhost:5173/book/{id})",
+                    "article_link": "[{title}](localhost:5173/articles/{slug})"
+                }
+            }
+            
+            # Return requested information
+            if info_type.lower() == "all":
+                return json.dumps(system_data, indent=2)
+            elif info_type.lower() in system_data:
+                return json.dumps(system_data[info_type.lower()], indent=2)
+            else:
+                available_types = list(system_data.keys())
+                return f"Invalid info_type '{info_type}'. Available types: {', '.join(available_types)}"
+        
+        
         # Return all tools as a list
-        return [retrieve, get_categories, search_by_category, get_popular_items]
+        return [
+            retrieve, 
+            get_categories, 
+            search_by_category, 
+            get_popular_items,
+            user_preferences,
+            advanced_search,
+            borrow_book,
+            article_fulltext_search,
+            trending_items,
+            feedback_submission,
+            event_recommendations,
+            cancel_borrow_request,
+            get_user_borrow_requests,
+            system_info
+        ]
 
 
 
@@ -635,11 +1156,21 @@ class ChatBot:
                         "- get_categories: Get all available categories of books and articles\n"
                         "- search_by_category: Search for books or articles within a specific category\n"
                         "- get_popular_items: Get the most popular books or articles\n\n"
+                        "- user_preferences: Manage user preferences for personalized recommendations\n"
+                        "- advanced_search: Perform advanced search with specific filters\n"
+                        "- borrow_book: Initiate a book borrowing request\n"
+                        "- article_fulltext_search: Search articles by full text\n"
+                        "- trending_items: Get trending books or articles based on recent activity\n"
+                        "- feedback_submission: Submit user feedback on chatbot interactions\n"
+                        "- event_recommendations: Recommend library events based on user interests\n\n"
+                        "- cancel_borrow_request: Cancel a pending book borrow request\n"
+                        "- get_user_borrow_requests: Get the current user's borrow requests\n\n"
                         f"TOOLS OUTPUT:\n{tools_output}\n\n"
                         f"DATABASE SEARCH RESULTS:\n{len(all_books)} books and {len(all_articles)} articles found."
                     )
                 )
                 
+
 
                 convo = [
                     msg for msg in state["messages"]
@@ -782,7 +1313,7 @@ class ChatBot:
                                 logger.error(f"Error fetching article {article_id} from database: {str(e)}")
 
                 # If the LLM was explicitly looking for articles but we found none, make a second search attempt
-                if response.recommended_articles and not validated_articles and 'article' in docs_content.lower():
+                if response.recommended_articles and not validated_articles and 'article' in tools_output.lower():
                     logger.warning("LLM recommended articles but none were valid - trying additional search")
                     try:
                         # Try another search specifically for articles
@@ -850,7 +1381,11 @@ class ChatBot:
     
     
     def chat_with_user(self, user_input: str, thread_id: str) -> ChatResponse:
-        config = {"configurable": {"thread_id": thread_id}}
+        config = {
+            "configurable": {
+                "thread_id": thread_id
+            }
+        }
         message = {"messages": [HumanMessage(content=user_input)]}
 
         final_response = None
