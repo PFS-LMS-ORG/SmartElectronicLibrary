@@ -253,8 +253,15 @@ class RentalRequestService:
         request = RentalRequest.query.get(request_id)
         if not request:
             raise ValueError("Rental request not found")
-        if request.user_id != user_id:
-            raise ValueError("You can only cancel your own requests")
+        
+        # Convert both IDs to the same type for comparison
+        db_user_id = int(request.user_id)
+        current_user_id = int(user_id)
+        
+        
+        if db_user_id != current_user_id:
+            raise ValueError(f"You can only cancel your own requests. Request belongs to user {db_user_id}, you are {current_user_id}")
+
         if request.status != "pending":
             raise ValueError("Only pending requests can be canceled")
 
