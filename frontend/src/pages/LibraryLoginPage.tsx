@@ -21,7 +21,7 @@ const LibraryLoginPage: React.FC = () => {
   const [errors, setErrors] = useState<FormErrors>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [attemptedSubmit, setAttemptedSubmit] = useState(false);
-  const { login } = useAuth();
+  const { isAuthenticated,login } = useAuth();
   const navigate = useNavigate();
 
   // This useEffect will help us debug re-renders
@@ -127,6 +127,14 @@ const LibraryLoginPage: React.FC = () => {
       }));
     }
   };
+
+
+  // Redirect to home if already authenticated
+  useEffect(() => {
+    if (isAuthenticated) {
+      navigate('/');
+    }
+  }, [isAuthenticated, navigate]);
 
   return (
     <div className="flex h-screen w-full bg-gradient-to-br from-gray-900 to-gray-800">
