@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { MessageSquareText, Send, X, Loader2, Trash2 } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
 import axios from 'axios';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'react-toastify';
@@ -7,6 +8,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import BookRecommendations, { BookRecommendation } from './BookRecommendation';
 import ArticleRecommendations, { ArticleRecommendation } from './ArticleRecommendation';
+import { R } from 'node_modules/framer-motion/dist/types.d-DUA-weyD';
 
 type MessageRole = 'user' | 'assistant';
 
@@ -391,7 +393,12 @@ const Chatbot: React.FC = () => {
 
             <div 
               className={`flex-1 overflow-y-auto p-4 ${language === 'ar' ? 'text-right' : 'text-left'}`}
-              style={{ direction: language === 'ar' ? 'rtl' : 'ltr', maxHeight: '400px' }}
+              style={{ 
+                direction: language === 'ar' ? 'rtl' : 'ltr', 
+                maxHeight: '400px',
+                '--markdown-img-max-width': '100px',
+                '--markdown-img-max-height': '100px',
+              } as React.CSSProperties}
             >
               {messages.map((message) => (
                 <React.Fragment key={message.id}>
@@ -405,7 +412,7 @@ const Chatbot: React.FC = () => {
                           : 'bg-gray-800/70 text-gray-200 rounded-tl-none'
                       }`}
                     >
-                      <p>{message.content}</p>
+                      <ReactMarkdown>{message.content}</ReactMarkdown>
                       <div
                         className={`text-xs mt-1 ${
                           message.role === 'user' ? 'text-indigo-200' : 'text-gray-400'
