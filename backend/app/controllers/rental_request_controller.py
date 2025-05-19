@@ -7,15 +7,20 @@ import requests
 from app.model.User import User
 from app.services.RentalRequestService import RentalRequestService
 from app.services.NotificationService import NotificationService
-from sqlalchemy.exc import SQLAlchemyError
 import logging
+from app.services.EmailService import EmailService
 
-rental_request_controller = Blueprint('rental_request_controller', __name__)
+
+# Initialize EmailService
+email_service = EmailService()
+
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
+
+rental_request_controller = Blueprint('rental_request_controller', __name__)
 def check_admin():
     """Helper to verify if the current user is an admin."""
     user_id = get_jwt_identity()
@@ -67,20 +72,24 @@ def create_rental_request():
         
         # Send email notification to user
         # -----------------------------------------------------------------------------------------
-        # Get the JWT token from the incoming request
-        auth_header = request.headers.get('Authorization')
-        if not auth_header:
-            logger.error("No Authorization header found in the request")
-        else:
-            headers = {'Authorization': auth_header}
-            response = requests.post('http://localhost:5050/email/send-rental-email', json={
-                'type': 'borrow',
-                'book_title': rental_request['book']['title'],
-                'due_date': rental_request['due_date'] if 'due_date' in rental_request else None,
-            }, headers=headers)
-            if response.status_code != 200:
-                logger.error("Failed to send rental request email: %s", response.text)
-        # -----------------------------------------------------------------------------------------
+        # Direct EmailService call:
+        user = User.query.get(user_id)
+        if user:
+            params = {
+                'userName': user.name,
+                'bookTitle': rental_request['book']['title'],
+                'action': 'borrow'
+            }
+            if 'due_date' in rental_request and rental_request['due_date']:
+                params['dueDate'] = f"<strong>Due date:</strong> {rental_request['due_date']}"
+            
+            result = email_service.send_email(
+                user.email,
+                'rental', 
+                params
+            )
+            if not result['success']:
+                logger.error("Failed to send rental request email: %s", result['message'])# -----------------------------------------------------------------------------------------
         
         return jsonify(rental_request), 201
     except ValueError as e:
@@ -210,18 +219,20 @@ def approve_rental_request(request_id):
         
         # Send email notification to user
         # -----------------------------------------------------------------------------------------
-        # Get the JWT token from the incoming request
-        auth_header = request.headers.get('Authorization')
-        if not auth_header:
-            logger.error("No Authorization header found in the request")
-        else:
-            headers = {'Authorization': auth_header}
-            response = requests.post('http://localhost:5050/email/send-request-action-email', json={
-                'request_id': request_id,
-                'action': 'approve'
-            }, headers=headers)
-            if response.status_code != 200:
-                logger.error("Failed to send approval request email: %s", response.text)
+        # Get the user from the request data
+        user = User.query.get(request_data['user_id'])
+        if user:
+            result = email_service.send_email(
+                user.email,
+                'request_action',
+                {
+                    'userName': user.name,
+                    'bookTitle': request_data['book']['title'],
+                    'action': 'approve'
+                }
+            )
+            if not result['success']:
+                logger.error("Failed to send approval request email: %s", result['message'])
         # -----------------------------------------------------------------------------------------
         
         return jsonify(request_data), 200
@@ -256,18 +267,20 @@ def reject_rental_request(request_id):
         
         # Send email notification to user
         # -----------------------------------------------------------------------------------------
-        # Get the JWT token from the incoming request
-        auth_header = request.headers.get('Authorization')
-        if not auth_header:
-            logger.error("No Authorization header found in the request")
-        else:
-            headers = {'Authorization': auth_header}
-            response = requests.post('http://localhost:5050/email/send-request-action-email', json={
-                'request_id': request_id,
-                'action': 'reject'
-            }, headers=headers)
-            if response.status_code != 200:
-                logger.error("Failed to send rejection request email: %s", response.text)
+        # Get the user from the request data
+        user = User.query.get(request_data['user_id'])
+        if user:
+            result = email_service.send_email(
+                user.email,
+                'request_action',
+                {
+                    'userName': user.name,
+                    'bookTitle': request_data['book']['title'],
+                    'action': 'reject'
+                }
+            )
+            if not result['success']:
+                logger.error("Failed to send rejection request email: %s", result['message'])
         # -----------------------------------------------------------------------------------------
 
         return jsonify(request_data), 200
@@ -284,22 +297,29 @@ def cancel_rental_request(request_id):
     """
     try:
         user_id = get_jwt_identity()
+        
+        # First, get the request data to access book information
+        request_data = RentalRequestService.get_request_by_id(request_id)
+        
         result = RentalRequestService.cancel_request(request_id, user_id)
         
         # Send email notification to user
         # -----------------------------------------------------------------------------------------
-        # Get the JWT token from the incoming request
-        auth_header = request.headers.get('Authorization')
-        if not auth_header:
-            logger.error("No Authorization header found in the request")
-        else:
-            headers = {'Authorization': auth_header}
-            response = requests.post('http://localhost:5050/email/send-request-action-email', json={
-                'request_id': request_id,
-                'action': 'remove'
-            }, headers=headers)
-            if response.status_code != 200:
-                logger.error("Failed to send cancel request email: %s", response.text)
+        if request_data:
+            # Get the user
+            user = User.query.get(user_id)
+            if user:
+                result = email_service.send_email(
+                    user.email,
+                    'request_action',
+                    {
+                        'userName': user.name,
+                        'bookTitle': request_data['book']['title'],
+                        'action': 'remove'
+                    }
+                )
+                if not result['success']:
+                    logger.error("Failed to send cancel request email: %s", result['message'])
         # -----------------------------------------------------------------------------------------
         
         return jsonify(result), 200
