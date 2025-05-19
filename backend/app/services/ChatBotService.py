@@ -10,12 +10,17 @@ logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 class ChatBotService:
-    def __init__(self):
+    def __init__(self, user_id=None):
         from app.services.ChatBot import ChatBot
-        self.chatbot = ChatBot(app=current_app)
-    
-    def chat_with_user(self, message: str, thread_id: str) -> str:
+        self.chatbot = ChatBot(app=current_app, user_id=user_id)
+
+    def chat_with_user(self, message: str, thread_id: str, user_id: int) -> str:
         try:
+            
+            # Update the user_id in the chatbot instance
+            self.chatbot.user_id = user_id
+            logger.debug(f"Set chatbot.user_id to {self.chatbot.user_id}")
+            
             logger.debug(f"Getting chatbot response for message: {message[:50]}...")
             response = self.chatbot.chat_with_user(message, thread_id)
             return response

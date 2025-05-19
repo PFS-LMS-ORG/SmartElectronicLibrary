@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { Link } from "react-router-dom";
+import { useSidebar } from "./sidebar";
 
 // Define menu items
 const menuItems = [
@@ -25,6 +26,10 @@ export function AppSidebar({ isCollapsed, setIsCollapsed }: { isCollapsed: boole
   const { user } = useAuth();
   const currentPath = typeof window !== 'undefined' ? window.location.pathname : '';
   
+  // Get sidebar context to detect if sidebar should be shown on mobile
+  const sidebar = useSidebar();
+  const isOpen = sidebar.open;
+
   const getUserInitials = () => {
     if (!user?.name) return "U";
     return user.name.split(' ').map((n: string) => n[0]).join('');
@@ -32,9 +37,14 @@ export function AppSidebar({ isCollapsed, setIsCollapsed }: { isCollapsed: boole
 
   return (
     <div
-      className={`h-screen flex-shrink-0 bg-[#1a1e2e] border-r border-[#2a2f42] transition-all duration-300 ${
-        isCollapsed ? "w-16" : "w-64"
-      } md:block hidden`}
+      className={`
+        h-screen flex-shrink-0 bg-[#1a1e2e] border-r border-[#2a2f42] 
+        fixed md:static z-40
+        transition-all duration-300 ease-in-out
+        ${isCollapsed ? "w-16" : "w-64"}
+        md:block md:translate-x-0
+        ${isOpen ? 'translate-x-0' : '-translate-x-full'}
+      `}
     >
       {/* Logo and Header */}
       <div className="flex items-center p-4 border-b border-[#2a2f42] justify-between">
@@ -49,17 +59,19 @@ export function AppSidebar({ isCollapsed, setIsCollapsed }: { isCollapsed: boole
             </div>
           )}
         </div>
-        <button
+        {/* <button
           onClick={() => setIsCollapsed(!isCollapsed)}
           className="p-1 rounded-md hover:bg-gray-700 text-gray-400 hover:text-gray-200 md:block hidden"
         >
           {isCollapsed ? <ChevronRight className="h-5 w-5" /> : <ChevronLeft className="h-5 w-5" />}
-        </button>
+        </button> */}
       </div>
       
       {/* Navigation Section */}
       <div className="px-3 py-5">
-        <h2 className="text-xs font-medium text-gray-500 px-3 mb-3">Application</h2>
+        <h2 className="text-xs font-medium text-gray-500 px-3 mb-3">
+          {isCollapsed ? "Menu" : "Application"}
+        </h2>
         
         {/* Menu Items */}
         <nav>

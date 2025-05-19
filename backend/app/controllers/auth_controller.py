@@ -10,7 +10,10 @@ from app.services.UserService import UserService
 from app.services.NotificationService import NotificationService
 from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity
 import logging
-import requests
+from app.services.EmailService import EmailService
+
+# Initialize EmailService
+email_service = EmailService()
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
@@ -109,20 +112,13 @@ def register():
 
         # Send registration email using service token
         # -----------------------------------------------------------------------------------------
-        service_token = os.environ.get('EMAILJS_SERVICE_TOKEN')
-        if not service_token:
-            logger.error("Service token not found in environment")
-        else:
-            headers = {
-                'Authorization': f'Bearer {service_token}'  # Include the service token
-            }
-            response = requests.post('http://localhost:5050/email/send-registration-email', json={
-                'email': email,
-                'name': name,
-                'action': 'register'
-            }, headers=headers)
-            if response.status_code != 200:
-                logger.error("Failed to send registration email: %s", response.text)
+        result = email_service.send_email(
+            email, 
+            'registration', 
+            {'userName': name, 'action': 'register'}
+        )
+        if not result['success']:
+            logger.error("Failed to send registration email: %s", result['message'])
         # -----------------------------------------------------------------------------------------
 
         logger.debug("Account request created for: %s", email)
