@@ -1,6 +1,6 @@
 // LibraryRegistrationPage.tsx
 
-import React, { useState, ChangeEvent, FormEvent, useRef } from 'react';
+import React, { useState, ChangeEvent, FormEvent, useRef, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import BookGallery from '../components/catalog/BookGallery';
 import { register } from '../services/auth';
@@ -126,10 +126,12 @@ const LibraryRegistrationPage: React.FC = () => {
 
   const { isAuthenticated } = useAuth();
 
-  if (isAuthenticated) {
-    navigate('/'); // Redirect to home if already authenticated
-    return null;
-  }
+    // Redirect to home if already authenticated
+    useEffect(() => {
+      if (isAuthenticated) {
+        navigate('/');
+      }
+    }, [isAuthenticated, navigate]);
 
 
   return (
