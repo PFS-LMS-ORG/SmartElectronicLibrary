@@ -5,7 +5,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import BookGallery from '../components/catalog/BookGallery';
 import { register } from '../services/auth';
 import { toast } from 'react-toastify';
-
+import { useAuth  } from '@/context/AuthContext';
 import { 
   registrationSchema, 
   RegistrationFormData, 
@@ -123,6 +123,14 @@ const LibraryRegistrationPage: React.FC = () => {
       }));
     }
   };
+
+  const { isAuthenticated } = useAuth();
+
+  if (isAuthenticated) {
+    navigate('/'); // Redirect to home if already authenticated
+    return null;
+  }
+
 
   return (
     <div className="flex h-screen w-full bg-gradient-to-br from-gray-900 to-gray-800">
