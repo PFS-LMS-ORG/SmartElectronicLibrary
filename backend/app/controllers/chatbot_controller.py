@@ -17,6 +17,11 @@ chatbot_controller = Blueprint('chatbot_controller', __name__)
 def process_message():
     try:
         user_id = get_jwt_identity()
+        if not user_id:
+            return jsonify({'error': 'User ID not found'}), 401
+        # DEBUG: Log the user ID
+        logger.debug(f"API endpoint extracted user_id={user_id}")
+        
         data = request.get_json()
         if not data or 'message' not in data:
             return jsonify({'error': 'Message is required'}), 400
@@ -26,7 +31,11 @@ def process_message():
         try:
             thread_id = f"user_{user_id}"
             chatbot_service = ChatBotService()
-            response_json = chatbot_service.chat_with_user(message, thread_id)
+            response_json = chatbot_service.chat_with_user(
+                message, 
+                thread_id,
+                user_id=user_id
+            )
             try:
                 response_data = json.loads(response_json)
             except Exception as e:
