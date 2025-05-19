@@ -1,11 +1,29 @@
+# backend/app/controllers/rental_controller.py
+
+
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from app.services.RentalService import RentalService
+from app.services.NotificationService import NotificationService
 from app.model.User import User
+from app.model.Rental import Rental
 from sqlalchemy.exc import IntegrityError
+import logging
+import requests
+from app.services.EmailService import EmailService
+
+
+# Initialize EmailService
+email_service = EmailService()
+
+
+# configure logging
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
+
+
 
 rental_controller = Blueprint('rental_controller', __name__)
-
 def check_admin():
     """Helper to verify if the current user is an admin."""
     user_id = get_jwt_identity()
@@ -31,6 +49,29 @@ def create_rental():
             return jsonify({'error': 'user_id and book_id are required'}), 400
 
         rental = RentalService.create_rental(data['user_id'], data['book_id'], update_book=True)
+        
+        # Send email notification
+        # -----------------------------------------------------------------------------------------
+        # Direct EmailService call:
+        user = User.query.get(data['user_id'])  # Get the user who is renting
+        if user:
+            params = {
+                'userName': user.name,
+                'bookTitle': rental.book.title,
+                'action': 'borrow'
+            }
+            if rental.returned_at:
+                params['dueDate'] = f"<strong>Due date:</strong> {rental.returned_at.strftime('%Y-%m-%d %H:%M:%S')}"
+            
+            result = email_service.send_email(
+                user.email,
+                'rental', 
+                params
+            )
+            if not result['success']:
+                logger.error("Failed to send rental email: %s", result['message'])
+        # -----------------------------------------------------------------------------------------
+        
         return jsonify(rental.to_dict()), 201
     except ValueError as e:
         return jsonify({'error': str(e)}), 400
@@ -161,6 +202,28 @@ def bulk_delete_rentals():
             return jsonify({'error': 'rental_ids array is required'}), 400
 
         result = RentalService.bulk_delete_rentals(data['rental_ids'])
+        
+        # Send email notification
+        # -----------------------------------------------------------------------------------------
+        # Send emails for each rental being deleted
+        for rental_id in data['rental_ids']:
+            rental = Rental.query.get(rental_id)
+            if rental and rental.book and rental.book.title:
+                # Get the user who rented the book
+                user = User.query.get(rental.user_id)
+                if user:
+                    result = email_service.send_email(
+                        user.email,
+                        'rental',
+                        {
+                            'userName': user.name,
+                            'bookTitle': rental.book.title,
+                            'action': 'delete'
+                        }
+                    )
+                    if not result['success']:
+                        logger.error("Failed to send delete rental email for rental ID %s: %s", rental_id, result['message'])
+        # -----------------------------------------------------------------------------------------
         return jsonify(result), 200
     except ValueError as e:
         return jsonify({'error': str(e)}), 400
@@ -197,6 +260,33 @@ def return_rental(rental_id):
         rental = RentalService.return_book(rental_id)
         if not rental:
             return jsonify({'error': 'Rental not found'}), 404
+        
+        
+        # Create a notification for the user
+        NotificationService.create_notification(
+            user_id=rental.user_id,
+            type='info',
+            message=f'You have successfully returned "{rental.book.title}".'
+        )
+        
+        # Send email notification
+        # -----------------------------------------------------------------------------------------
+        # Get the user who rented the book
+        user = User.query.get(rental.user_id)
+        if user:
+            result = email_service.send_email(
+                user.email,
+                'rental',
+                {
+                    'userName': user.name,
+                    'bookTitle': rental.book.title,
+                    'action': 'return'
+                }
+            )
+            if not result['success']:
+                logger.error("Failed to send return email: %s", result['message'])
+        # -----------------------------------------------------------------------------------------
+        
         return jsonify(rental.to_dict()), 200
     except ValueError as e:
         return jsonify({'error': str(e)}), 400

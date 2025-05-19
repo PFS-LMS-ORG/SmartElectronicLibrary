@@ -6,6 +6,10 @@ import { Button } from '@/components/ui/button';
 import BackgroundWrapper from '@/components/ui/BackgroundWrapper';
 import BookCover from '@/components/ui/BookCover';
 import axios from 'axios';
+import { toast } from 'react-toastify';
+
+import { Link } from 'react-router-dom';
+import { BookmarkIcon, ThumbsUp } from 'lucide-react';
 
 interface Rental {
   id: number;
@@ -35,6 +39,40 @@ interface RentalRequest {
   };
 }
 
+
+interface UserStats {
+  days_active: number;
+  favorite_category: string | null;
+  books_read: number;
+  currently_reading: number;
+  liked_articles_count: number;
+  bookmarked_articles_count: number;
+}
+
+interface ProfileArticle {
+  id: string;
+  title: string;
+  slug: string;
+  coverImageUrl: string;
+  category: string;
+  summary: string;
+  createdAt: string;
+}
+
+interface UserProfile {
+  user: {
+    id: number;
+    name: string;
+    email: string;
+    role: string;
+    date_joined: string;
+  };
+  stats: UserStats;
+  liked_articles: ProfileArticle[];
+  bookmarked_articles: ProfileArticle[];
+}
+
+
 const UserProfilePage: React.FC = () => {
   const { user, isAuthenticated, isLoading } = useAuth();
   const navigate = useNavigate();
@@ -42,9 +80,14 @@ const UserProfilePage: React.FC = () => {
   const [activeRentals, setActiveRentals] = useState<Rental[]>([]);
   const [rentalHistory, setRentalHistory] = useState<Rental[]>([]);
   const [pendingRequests, setPendingRequests] = useState<RentalRequest[]>([]);
+  const [isCanceling, setIsCanceling] = useState(false);
+  const [cancelRequestId, setCancelRequestId] = useState<number | null>(null);
+  const [showCancelModal, setShowCancelModal] = useState(false);
   const [isLoadingRentals, setIsLoadingRentals] = useState(true);
   const [isLoadingRequests, setIsLoadingRequests] = useState(true);
-  const [activeTab, setActiveTab] = useState<'rentals' | 'history' | 'requests'>('rentals');
+  const [activeTab, setActiveTab] = useState<'rentals' | 'history' | 'requests' | 'articles'>('rentals');
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  const [isLoadingProfile, setIsLoadingProfile] = useState(true);
   
   useEffect(() => {
     if (isLoading) return;
@@ -54,10 +97,31 @@ const UserProfilePage: React.FC = () => {
       return;
     }
     
+    fetchUserProfile();
     fetchUserRentals();
     fetchUserRequests();
   }, [isAuthenticated, isLoading, navigate]);
-  
+
+
+  const fetchUserProfile = async () => {
+    try {
+      setIsLoadingProfile(true);
+      const token = localStorage.getItem('token');
+      if (!token) throw new Error('No token found');
+      
+      const response = await axios.get('/api/user/profile', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      
+      setUserProfile(response.data);
+    } catch (error) {
+      console.error('Error fetching user profile:', error);
+    } finally {
+      setIsLoadingProfile(false);
+    }
+  };
+
+
   const fetchUserRentals = async () => {
     try {
       setIsLoadingRentals(true);
@@ -144,13 +208,50 @@ const UserProfilePage: React.FC = () => {
   const handleBookClick = (bookId: number) => {
     navigate(`/book/${bookId}`);
   };
+
+
+  const handleCancelRequest = (requestId: number) => {
+    // Set the request ID to be canceled
+    setCancelRequestId(requestId);
+    // Show the cancel confirmation modal
+    setShowCancelModal(true);
+  };
+
+  const cancelRequest = async (requestId: number) => {
+    try {
+      setIsCanceling(true);
+      const token = localStorage.getItem('token');
+      if (!token) throw new Error('No token found');
+      
+      // Call the API to cancel the request
+      await axios.delete(`/api/rental_requests/${requestId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      
+      // Remove the canceled request from the list
+      setPendingRequests(prevRequests => 
+        prevRequests.filter(req => req.id !== requestId)
+      );
+      
+      // Show success notification
+      toast.success('Request canceled successfully!');
+    } catch (error) {
+      console.error('Error canceling request:', error);
+      // Show error notification
+      toast.error('Failed to cancel request. Please try again.');
+    } finally {
+      setIsCanceling(false);
+      setCancelRequestId(null);
+    }
+  };
+
   
   // Generate random reading stats for demo purposes
   const readingStats = {
-    booksRead: rentalHistory.length,
-    currentlyReading: activeRentals.length,
-    daysActive: Math.floor(Math.random() * 200) + 30,
-    favCategory: user?.role === 'admin' ? 'Technology' : 'Fiction',
+    booksRead: userProfile?.stats.books_read || rentalHistory.length,
+    currentlyReading: userProfile?.stats.currently_reading || activeRentals.length,
+    daysActive: userProfile?.stats.days_active || 0,
+    favCategory: userProfile?.stats.favorite_category || 'None yet',
   };
   
   if (isLoading) {
@@ -285,6 +386,24 @@ const UserProfilePage: React.FC = () => {
                 <div className="absolute bottom-0 left-0 w-full h-0.5 bg-amber-500"></div>
               )}
             </button>
+            <button
+              onClick={() => setActiveTab('articles')}
+              className={`flex-1 py-3 px-4 text-center relative ${
+                activeTab === 'articles' 
+                  ? 'text-white font-medium' 
+                  : 'text-gray-400 hover:text-gray-200'
+              }`}
+            >
+              Articles
+              {((userProfile?.liked_articles?.length ?? 0) > 0 || (userProfile?.bookmarked_articles?.length ?? 0) > 0) && (
+                <span className="absolute top-2 right-2 bg-blue-600 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">
+                  {(userProfile?.liked_articles?.length || 0) + (userProfile?.bookmarked_articles?.length || 0)}
+                </span>
+              )}
+              {activeTab === 'articles' && (
+                <div className="absolute bottom-0 left-0 w-full h-0.5 bg-amber-500"></div>
+              )}
+            </button>
           </div>
           
           <div className="p-6">
@@ -377,8 +496,7 @@ const UserProfilePage: React.FC = () => {
                     {pendingRequests.map((request) => (
                       <div 
                         key={request.id}
-                        className="bg-gray-800/50 rounded-xl border border-gray-700/50 overflow-hidden hover:border-amber-700/30 transition-all duration-300 hover:shadow-amber-900/10 hover:shadow-lg hover:-translate-y-1 cursor-pointer"
-                        onClick={() => handleBookClick(request.book.id)}
+                        className="bg-gray-800/50 rounded-xl border border-gray-700/50 overflow-hidden hover:border-amber-700/30 transition-all duration-300 hover:shadow-amber-900/10 hover:shadow-lg hover:-translate-y-1"
                       >
                         <div className="flex p-4">
                           <div className="w-16 h-24 flex-shrink-0 mr-4">
@@ -406,10 +524,21 @@ const UserProfilePage: React.FC = () => {
                             <Clock className="h-3 w-3 mr-1 text-yellow-400" />
                             <span className="text-yellow-300">Pending approval</span>
                           </div>
-                          <ChevronRight className="h-4 w-4 text-gray-400" />
+                          {/* Add a Cancel button */}
+                          <Button 
+                            variant="destructive" 
+                            size="sm" 
+                              className="bg-red-600 hover:bg-red-700 text-xs py-1 h-auto"
+                              onClick={(e) => {
+                                e.stopPropagation(); // Prevent the card click from triggering
+                                handleCancelRequest(request.id);
+                              }}
+                            >
+                              Cancel
+                          </Button>
                         </div>
                       </div>
-                    ))}
+                  ))}
                   </div>
                 ) : (
                   <div className="text-center py-12 bg-gray-800/30 rounded-xl border border-gray-700/50">
@@ -496,9 +625,187 @@ const UserProfilePage: React.FC = () => {
                 )}
               </>
             )}
+
+            {/* Articles Tab */}
+            {activeTab === 'articles' && (
+              <>
+                {isLoadingProfile ? (
+                  <div className="flex justify-center py-12">
+                    <div className="animate-spin h-8 w-8 border-b-2 border-amber-400 rounded-full"></div>
+                  </div>
+                ) : (
+                  <div>
+                    {/* Liked Articles */}
+                    <div className="mb-8">
+                      <h3 className="text-xl font-medium text-white mb-4 flex items-center">
+                        <ThumbsUp className="h-5 w-5 mr-2 text-amber-400" />
+                        Liked Articles
+                      </h3>
+                      
+                      {userProfile?.liked_articles && userProfile.liked_articles.length > 0 ? (
+                        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
+                          {userProfile.liked_articles.map(article => (
+                            <Link 
+                              key={article.id}
+                              to={`/articles/${article.slug}`}
+                              className="bg-gray-800/50 rounded-xl border border-gray-700/50 overflow-hidden hover:border-amber-700/30 transition-all duration-300 hover:shadow-amber-900/10 hover:shadow-lg hover:-translate-y-1"
+                            >
+                              <div className="h-20 w-full overflow-hidden">
+                                <img 
+                                  src={article.coverImageUrl || 'https://placehold.co/600x300'} 
+                                  alt={article.title}
+                                  className="w-full h-full object-cover transition-transform duration-300 hover:scale-105"
+                                />
+                              </div>
+                              <div className="p-2">
+                                <div className="text-xs font-medium text-amber-400 mb-2">{article.category}</div>
+                                <h4 className="text-white font-medium mb-2 line-clamp-2">{article.title}</h4>
+                                <p className="text-gray-400 text-sm line-clamp-3">{article.summary}</p>
+                              </div>
+                            </Link>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="text-center py-6 bg-gray-800/30 rounded-xl border border-gray-700/50">
+                          <ThumbsUp className="h-10 w-10 text-gray-600 mx-auto mb-3" strokeWidth={1} />
+                          <h3 className="text-lg font-medium text-white mb-2">No Liked Articles</h3>
+                          <p className="text-gray-400 mb-4">You haven't liked any articles yet.</p>
+                          <Button
+                            onClick={() => navigate('/articles')}
+                            className="bg-amber-600 hover:bg-amber-700 text-white"
+                          >
+                            Browse Articles
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                    
+                    {/* Bookmarked Articles */}
+                    <div>
+                      <h3 className="text-xl font-medium text-white mb-4 flex items-center">
+                        <BookmarkIcon className="h-5 w-5 mr-2 text-amber-400" />
+                        Bookmarked Articles
+                      </h3>
+                      
+                      {userProfile?.bookmarked_articles && userProfile.bookmarked_articles.length > 0 ? (
+                        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
+                          {userProfile.bookmarked_articles.map(article => (
+                            <Link 
+                              key={article.id}
+                              to={`/articles/${article.slug}`}
+                              className="bg-gray-800/50 rounded-xl border border-gray-700/50 overflow-hidden hover:border-amber-700/30 transition-all duration-300 hover:shadow-amber-900/10 hover:shadow-lg hover:-translate-y-1"
+                            >
+                              <div className="h-20 w-full overflow-hidden">
+                                <img 
+                                  src={article.coverImageUrl || 'https://placehold.co/600x300'} 
+                                  alt={article.title}
+                                  className="w-full h-full object-cover transition-transform duration-300 hover:scale-105"
+                                />
+                              </div>
+                              <div className="p-2">
+                                <div className="text-xs font-medium text-amber-400 mb-2">{article.category}</div>
+                                <h4 className="text-white font-medium mb-2 line-clamp-2">{article.title}</h4>
+                                <p className="text-gray-400 text-sm line-clamp-3">{article.summary}</p>
+                              </div>
+                            </Link>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="text-center py-6 bg-gray-800/30 rounded-xl border border-gray-700/50">
+                          <BookmarkIcon className="h-10 w-10 text-gray-600 mx-auto mb-3" strokeWidth={1} />
+                          <h3 className="text-lg font-medium text-white mb-2">No Bookmarked Articles</h3>
+                          <p className="text-gray-400 mb-4">You haven't bookmarked any articles yet.</p>
+                          <Button
+                            onClick={() => navigate('/articles')}
+                            className="bg-amber-600 hover:bg-amber-700 text-white"
+                          >
+                            Browse Articles
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
           </div>
         </div>
       </main>
+      {/* Cancel Confirmation Modal */}
+      {showCancelModal && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 animate-fadeIn">
+          <div className="relative bg-gradient-to-br from-gray-800 to-gray-900 border border-gray-700/50 rounded-2xl p-8 max-w-md w-full mx-4 shadow-xl animate-scaleIn">
+            {/* Decorative elements */}
+            <div className="absolute -top-4 -left-4 w-16 h-16 bg-red-500/20 rounded-full blur-xl"></div>
+            <div className="absolute -bottom-4 -right-4 w-20 h-20 bg-amber-500/20 rounded-full blur-xl"></div>
+            
+            {/* Header */}
+            <div className="flex items-center mb-6">
+              <div className="bg-red-600/20 p-3 rounded-full mr-4">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </div>
+              <h3 className="text-2xl font-bold text-white">Cancel Request</h3>
+            </div>
+            
+            {/* Content */}
+            <div className="mb-8">
+              <p className="text-gray-300 mb-3 leading-relaxed">
+                Are you sure you want to cancel this book request? This action cannot be undone.
+              </p>
+              <div className="bg-gray-900/50 border border-gray-700/50 rounded-lg p-4 flex items-center mt-4">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-amber-400 mr-3 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <p className="text-sm text-gray-400">
+                  You can place a new request for this book at any time after cancellation.
+                </p>
+              </div>
+            </div>
+            
+            {/* Buttons */}
+            <div className="flex justify-end space-x-4">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowCancelModal(false);
+                  setCancelRequestId(null);
+                }}
+                className="border border-gray-600 bg-gray-800/50 text-gray-300 hover:bg-gray-700 hover:text-white px-5 transition-all duration-200"
+                disabled={isCanceling}
+              >
+                Keep Request
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={() => {
+                  setShowCancelModal(false);
+                  if (cancelRequestId !== null) {
+                    cancelRequest(cancelRequestId);
+                  }
+                }}
+                disabled={isCanceling}
+                className="bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 text-white shadow-lg shadow-red-600/20 px-5 transition-all duration-200"
+              >
+                {isCanceling ? (
+                  <div className="flex items-center justify-center">
+                    <div className="animate-spin h-5 w-5 border-2 border-white rounded-full border-t-transparent mr-2"></div>
+                    <span>Canceling...</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                    Cancel Request
+                  </div>
+                )}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </BackgroundWrapper>
   );
 };

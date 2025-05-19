@@ -1,8 +1,15 @@
 import React, { useState, useEffect, FormEvent } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { format } from 'date-fns';
-import { BookOpen, Calendar, User, Search, Download, Trash2, Eye, Edit, CheckCircle, X, ChevronLeft, ChevronRight } from 'lucide-react';
+import { 
+  BookOpen, Calendar, User, Search, Download, Trash2, 
+  Eye, Edit, CheckCircle, X, 
+  Filter, RefreshCw, ChevronDown
+} from 'lucide-react';
+import axios from 'axios';
 import Layout from '@/components/layout/layout';
 import { motion } from 'framer-motion';
+import Pagination from '@/components/common/Pagination';
 
 // Types
 interface User {
@@ -29,16 +36,11 @@ interface Rental {
   book: Book | null;
 }
 
-interface RentalsResponse {
-  rentals: Rental[];
-  total_count: number;
-  total_pages: number;
-}
 
 // Reusable Components
 const LoadingSpinner = () => (
   <div className="flex justify-center items-center py-16">
-    <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-purple-500"></div>
+    <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-amber-500"></div>
   </div>
 );
 
@@ -59,54 +61,14 @@ const ToastNotification = ({ message, type, onClose }: { message: string; type: 
     initial={{ opacity: 0, x: 50 }}
     animate={{ opacity: 1, x: 0 }}
     exit={{ opacity: 0, x: 50 }}
+    transition={{ duration: 0.3 }}
+    onAnimationComplete={() => setTimeout(onClose, 3000)} // Auto-close after 3 seconds
+    onClick={onClose}
   >
     {type === 'success' ? <CheckCircle className="h-5 w-5 text-green-400 mr-3" /> : <X className="h-5 w-5 text-red-400 mr-3" />}
     <p>{message}</p>
   </motion.div>
 );
-
-const Pagination = ({ page, totalPages, onPageChange }: { page: number; totalPages: number; onPageChange: (newPage: number) => void }) => {
-  const getPageNumbers = () => {
-    if (totalPages <= 5) return Array.from({ length: totalPages }, (_, i) => i + 1);
-    if (page <= 3) return [1, 2, 3, 4, 5];
-    if (page >= totalPages - 2) return [totalPages - 4, totalPages - 3, totalPages - 2, totalPages - 1, totalPages];
-    return [page - 2, page - 1, page, page + 1, page + 2];
-  };
-
-  return (
-    <div className="px-6 py-4 flex items-center justify-between border-t border-gray-700">
-      <button
-        onClick={() => onPageChange(page - 1)}
-        disabled={page === 1}
-        className="flex items-center px-4 py-2 text-sm font-medium rounded-md bg-gray-700 border border-gray-600 text-gray-200 hover:bg-gray-600 disabled:bg-gray-800 disabled:text-gray-500 disabled:border-gray-700 disabled:cursor-not-allowed transition-colors"
-      >
-        <ChevronLeft className="h-4 w-4 mr-1" />
-        Previous
-      </button>
-      <div className="flex items-center">
-        {getPageNumbers().map((pageNum) => (
-          <button
-            key={pageNum}
-            onClick={() => onPageChange(pageNum)}
-            className={`mx-1 px-3 py-1 rounded-md text-sm ${
-              page === pageNum ? 'bg-purple-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-            }`}
-          >
-            {pageNum}
-          </button>
-        ))}
-      </div>
-      <button
-        onClick={() => onPageChange(page + 1)}
-        disabled={page === totalPages}
-        className="flex items-center px-4 py-2 text-sm font-medium rounded-md bg-gray-700 border border-gray-600 text-gray-200 hover:bg-gray-600 disabled:bg-gray-800 disabled:text-gray-500 disabled:border-gray-700 disabled:cursor-not-allowed transition-colors"
-      >
-        Next
-        <ChevronRight className="h-4 w-4 ml-1" />
-      </button>
-    </div>
-  );
-};
 
 interface EditRentalModalProps {
   rental: Rental;
@@ -263,19 +225,32 @@ const EditRentalModal: React.FC<EditRentalModalProps> = ({ rental, onClose, onSa
 
 // Main Component
 const AdminRentalsPage: React.FC = () => {
+  const [searchParams, setSearchParams] = useSearchParams();
+  
   const [rentals, setRentals] = useState<Rental[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
-  const [page, setPage] = useState<number>(1);
-  const [perPage] = useState<number>(10);
+  const [page, setPage] = useState<number>(parseInt(searchParams.get('page') || '1', 10));
+  const [perPage, setPerPage] = useState<number>(parseInt(searchParams.get('per_page') || '10', 10));
   const [totalPages, setTotalPages] = useState<number>(1);
-  const [statusFilter, setStatusFilter] = useState<string>('all');
-  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [totalRentals, setTotalRentals] = useState<number>(0);
+  const [statusFilter, setStatusFilter] = useState<string>(searchParams.get('status') || 'all');
+  const [searchQuery, setSearchQuery] = useState<string>(searchParams.get('search') || '');
   const [actionLoading, setActionLoading] = useState<{ [key: number]: string }>({});
   const [viewRental, setViewRental] = useState<Rental | null>(null);
   const [editRental, setEditRental] = useState<Rental | null>(null);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+
+  // Update URL when parameters change
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (searchQuery) params.set('search', searchQuery);
+    if (page !== 1) params.set('page', page.toString());
+    if (perPage !== 10) params.set('per_page', perPage.toString());
+    if (statusFilter !== 'all') params.set('status', statusFilter);
+    setSearchParams(params);
+  }, [page, perPage, statusFilter, searchQuery, setSearchParams]);
 
   const fetchRentals = async () => {
     try {
@@ -291,30 +266,62 @@ const AdminRentalsPage: React.FC = () => {
         ...(searchQuery && { search: searchQuery }),
       });
 
-      const response = await fetch(`/api/rentals?${params.toString()}`, {
+      const response = await axios.get(`/api/rentals?${params.toString()}`, {
         headers: { 
           Authorization: `Bearer ${token}`, 
           'Content-Type': 'application/json' 
         },
       });
 
-      if (!response.ok) {
-        if (response.status === 403) throw new Error('Forbidden: Admin access required');
-        if (response.status === 401) throw new Error('Unauthorized: Please log in again');
-        throw new Error(`HTTP error! Status: ${response.status}`);
+      if (!response.data.rentals || !Array.isArray(response.data.rentals)) {
+        throw new Error('Invalid response format');
       }
 
-      const data: RentalsResponse = await response.json();
-      if (!data.rentals || !Array.isArray(data.rentals)) throw new Error('Invalid response format');
-
-      setRentals(data.rentals);
-      setTotalPages(data.total_pages || 1);
-    } catch (err) {
+      setRentals(response.data.rentals);
+      setTotalRentals(response.data.total_count || 0);
+      setTotalPages(response.data.total_pages || 1);
+    } catch (err: any) {
+      console.error('Error fetching rentals:', {
+        message: err.message,
+        response: err.response?.data,
+        status: err.response?.status,
+      });
       setError(err instanceof Error ? err.message : 'Failed to fetch rentals');
       setRentals([]);
+      setTotalRentals(0);
+      setTotalPages(1);
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    setPage(1); // Reset to first page on new search
+    fetchRentals();
+  };
+
+  const handleStatusFilterChange = (status: string) => {
+    setStatusFilter(status);
+    setPage(1); // Reset to first page when filter changes
+    fetchRentals();
+  };
+
+  const handlePerPageChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const newPerPage = parseInt(e.target.value, 10);
+    setPerPage(newPerPage);
+    setPage(1); // Reset to first page when items per page changes
+  };
+
+  const clearFilters = () => {
+    setSearchQuery('');
+    setStatusFilter('all');
+    setPage(1);
+    fetchRentals();
+  };
+
+  const refreshData = () => {
+    fetchRentals();
   };
 
   const handleAction = async (rentalId: number, action: 'return' | 'delete') => {
@@ -326,35 +333,32 @@ const AdminRentalsPage: React.FC = () => {
       const token = localStorage.getItem('token');
       if (!token) throw new Error('No authentication token found');
 
-      const method = action === 'delete' ? 'DELETE' : 'PUT';
       const url = action === 'delete' ? `/api/rentals/${rentalId}` : `/api/rentals/${rentalId}/return`;
-
-      const response = await fetch(url, {
-        method,
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      const response = await axios({
+        method: action === 'delete' ? 'DELETE' : 'PUT',
+        url,
+        headers: { 
+          Authorization: `Bearer ${token}`, 
+          'Content-Type': 'application/json' 
+        },
       });
-
-      if (!response.ok) {
-        if (response.status === 403) throw new Error('Forbidden: Admin access required');
-        if (response.status === 400 || response.status === 404) {
-          const data = await response.json();
-          throw new Error(data.error || `Failed to ${action} rental`);
-        }
-        throw new Error(`HTTP error! Status: ${response.status}`);
-      }
 
       if (action === 'delete') {
         setRentals((prev) => prev.filter((r) => r.id !== rentalId));
         setSelectedIds((prev) => prev.filter((id) => id !== rentalId));
-        setToast({ message: 'Rental deleted successfully', type: 'success' });
+        setToast({ message: 'Rental deleted successfully. Email notification sent.', type: 'success' });
       } else {
-        const updatedRental = await response.json();
-        setRentals((prev) => prev.map((r) => (r.id === rentalId ? { ...r, ...updatedRental } : r)));
-        setToast({ message: 'Rental marked as returned', type: 'success' });
+        setRentals((prev) => prev.map((r) => (r.id === rentalId ? { ...r, ...response.data } : r)));
+        setToast({ message: 'Rental marked as returned. Email notification sent.', type: 'success' });
       }
-    } catch (err) {
+    } catch (err: any) {
+      console.error(`Error performing ${action} on rental:`, {
+        message: err.message,
+        response: err.response?.data,
+        status: err.response?.status,
+      });
       setError(err instanceof Error ? err.message : `Failed to ${action} rental`);
-      setToast({ message: err instanceof Error ? err.message : `Failed to ${action} rental`, type: 'error' });
+      setToast({ message: err instanceof Error ? err.message : `Failed to ${action} rental. Email not sent.`, type: 'error' });
     } finally {
       setActionLoading((prev) => ({ ...prev, [rentalId]: '' }));
     }
@@ -366,30 +370,26 @@ const AdminRentalsPage: React.FC = () => {
       const token = localStorage.getItem('token');
       if (!token) throw new Error('No authentication token found');
 
-      const response = await fetch(`/api/rentals/${updatedRental.id}`, {
-        method: 'PUT',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          user_id: updatedRental.user_id,
-          book_id: updatedRental.book_id,
-          rented_at: updatedRental.rented_at,
-          returned_at: updatedRental.returned_at,
-        }),
+      const response = await axios.put(`/api/rentals/${updatedRental.id}`, {
+        user_id: updatedRental.user_id,
+        book_id: updatedRental.book_id,
+        rented_at: updatedRental.rented_at,
+        returned_at: updatedRental.returned_at,
+      }, {
+        headers: { 
+          Authorization: `Bearer ${token}`, 
+          'Content-Type': 'application/json' 
+        },
       });
 
-      if (!response.ok) {
-        if (response.status === 403) throw new Error('Forbidden: Admin access required');
-        if (response.status === 400 || response.status === 404) {
-          const data = await response.json();
-          throw new Error(data.error || 'Failed to update rental');
-        }
-        throw new Error(`HTTP error! Status: ${response.status}`);
-      }
-
-      const updated = await response.json();
-      setRentals((prev) => prev.map((r) => (r.id === updatedRental.id ? { ...r, ...updated } : r)));
-      setToast({ message: 'Rental updated successfully', type: 'success' });
-    } catch (err) {
+      setRentals((prev) => prev.map((r) => (r.id === updatedRental.id ? { ...r, ...response.data } : r)));
+      setToast({ message: 'Rental updated successfully. Email notification sent.', type: 'success' });
+    } catch (err: any) {
+      console.error('Error updating rental:', {
+        message: err.message,
+        response: err.response?.data,
+        status: err.response?.status,
+      });
       throw err;
     }
   };
@@ -402,27 +402,25 @@ const AdminRentalsPage: React.FC = () => {
       const token = localStorage.getItem('token');
       if (!token) throw new Error('No authentication token found');
 
-      const response = await fetch('/api/rentals/bulk', {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ rental_ids: selectedIds }),
+      await axios.delete('/api/rentals/bulk', {
+        headers: { 
+          Authorization: `Bearer ${token}`, 
+          'Content-Type': 'application/json' 
+        },
+        data: { rental_ids: selectedIds },
       });
-
-      if (!response.ok) {
-        if (response.status === 403) throw new Error('Forbidden: Admin access required');
-        if (response.status === 400) {
-          const data = await response.json();
-          throw new Error(data.error || 'Failed to delete rentals');
-        }
-        throw new Error(`HTTP error! Status: ${response.status}`);
-      }
 
       setRentals((prev) => prev.filter((r) => !selectedIds.includes(r.id)));
       setSelectedIds([]);
-      setToast({ message: `Deleted ${selectedIds.length} rentals`, type: 'success' });
-    } catch (err) {
+      setToast({ message: `Deleted ${selectedIds.length} rentals. Email notifications sent.`, type: 'success' });
+    } catch (err: any) {
+      console.error('Error bulk deleting rentals:', {
+        message: err.message,
+        response: err.response?.data,
+        status: err.response?.status,
+      });
       setError(err instanceof Error ? err.message : 'Failed to delete rentals');
-      setToast({ message: err instanceof Error ? err.message : 'Failed to delete rentals', type: 'error' });
+      setToast({ message: err instanceof Error ? err.message : 'Failed to delete rentals. Emails not sent.', type: 'error' });
     }
   };
 
@@ -467,10 +465,16 @@ const AdminRentalsPage: React.FC = () => {
     const colors = ['bg-indigo-600', 'bg-emerald-600', 'bg-fuchsia-600', 'bg-amber-600'];
     return colors[title.length % colors.length];
   };
+  
+
+  const handlePageChange = (newPage: number) => {
+    const page = Math.max(1, Math.min(newPage, totalPages));
+    setPage(page);
+  };
 
   useEffect(() => {
     fetchRentals();
-  }, [page, statusFilter, searchQuery]);
+  }, [page, perPage]);
 
   useEffect(() => {
     if (toast) {
@@ -489,44 +493,114 @@ const AdminRentalsPage: React.FC = () => {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5 }}
           >
+            {/* Header */}
             <div className="p-6 border-b border-gray-700">
               <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <h1 className="text-2xl font-bold text-white flex items-center">
                   <BookOpen className="w-6 h-6 mr-2 text-amber-400" />
                   Rentals Management
                 </h1>
-                <div className="flex flex-col md:flex-row gap-3 w-full md:w-auto">
-                  <div className="relative">
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                      <Search className="h-4 w-4 text-gray-400" />
-                    </div>
-                    <input
-                      type="text"
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      placeholder="Search user or book..."
-                      className="pl-10 pr-4 py-2 w-full md:w-64 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-200 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent"
-                    />
-                  </div>
-                  <select
-                    value={statusFilter}
-                    onChange={(e) => setStatusFilter(e.target.value)}
-                    className="px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={refreshData}
+                    className="px-3 py-1.5 text-sm rounded-lg flex items-center bg-gray-700 text-gray-300 hover:bg-gray-600 transition-colors"
+                    title="Refresh data"
                   >
-                    <option value="all">All Statuses</option>
-                    <option value="active">Active</option>
-                    <option value="returned">Returned</option>
-                  </select>
+                    <RefreshCw size={14} className="mr-1" /> Refresh
+                  </button>
                   <button
                     onClick={exportToCSV}
-                    className="px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors flex items-center justify-center"
+                    className="px-3 py-1.5 text-sm rounded-lg flex items-center bg-amber-600 text-white hover:bg-amber-700 transition-colors"
                   >
-                    <Download className="h-4 w-4 mr-2" />
-                    Export CSV
+                    <Download size={14} className="mr-1" /> Export CSV
                   </button>
                 </div>
               </div>
             </div>
+            
+            {/* Search and Filter Area */}
+            <div className="flex flex-col md:flex-row gap-4 px-6 pt-4">
+              {/* Search Form */}
+              <div className="md:flex-grow">
+                <form onSubmit={handleSearch} className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <Search size={16} className="text-gray-400" />
+                  </div>
+                  <input
+                    type="text"
+                    className="w-full pl-10 pr-4 py-2 border border-gray-600 rounded-lg bg-gray-700 text-gray-100 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+                    placeholder="Search users or books..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                  />
+                  <button
+                    type="submit"
+                    className="absolute right-2 top-1/2 transform -translate-y-1/2 p-1.5 rounded-md bg-amber-600 text-amber-100 hover:bg-amber-700 transition-colors"
+                  >
+                    <Search size={16} />
+                  </button>
+                </form>
+              </div>
+
+              {/* Status Filter */}
+              <div className="relative w-full md:w-64">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <Filter size={16} className="text-gray-400" />
+                </div>
+                <select
+                  value={statusFilter}
+                  onChange={(e) => handleStatusFilterChange(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2 border border-gray-600 rounded-lg bg-gray-700 text-gray-100 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 appearance-none"
+                  style={{ backgroundImage: "none" }} // Remove default arrow
+                >
+                  <option value="all">All Statuses</option>
+                  <option value="active">Active</option>
+                  <option value="returned">Returned</option>
+                </select>
+                <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                  <ChevronDown size={16} className="text-gray-400" />
+                </div>
+              </div>
+            </div>
+            
+            {/* Active filters display */}
+            {(searchQuery || statusFilter !== 'all') && (
+              <div className="flex items-center flex-wrap gap-2 px-6 py-3">
+                <span className="text-xs text-gray-400">Active filters:</span>
+                {searchQuery && (
+                  <span className="inline-flex items-center px-2 py-1 bg-amber-900/30 text-amber-300 text-xs rounded border border-amber-700">
+                    Search: {searchQuery}
+                    <button 
+                      onClick={() => { setSearchQuery(''); setPage(1); }}
+                      className="ml-1.5 hover:text-white"
+                    >
+                      <X size={12} />
+                    </button>
+                  </span>
+                )}
+                {statusFilter !== 'all' && (
+                  <span className={`inline-flex items-center px-2 py-1 text-xs rounded border ${
+                    statusFilter === 'active' 
+                      ? 'bg-green-900/30 text-green-300 border-green-700' 
+                      : 'bg-gray-700 text-gray-300 border-gray-600'
+                  }`}>
+                    Status: {statusFilter.charAt(0).toUpperCase() + statusFilter.slice(1)}
+                    <button 
+                      onClick={() => { setStatusFilter('all'); setPage(1); }}
+                      className="ml-1.5 hover:text-white"
+                    >
+                      <X size={12} />
+                    </button>
+                  </span>
+                )}
+                <button
+                  onClick={clearFilters}
+                  className="text-xs text-gray-400 hover:text-gray-300 ml-2"
+                >
+                  Clear all
+                </button>
+              </div>
+            )}
 
             {error && <ErrorMessage message={error} />}
             {toast && <ToastNotification message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
@@ -574,7 +648,15 @@ const AdminRentalsPage: React.FC = () => {
                       {rentals.length === 0 ? (
                         <tr>
                           <td colSpan={7} className="px-6 py-10 text-center text-gray-400">
-                            No rentals found
+                            <div className="flex flex-col items-center justify-center">
+                              <BookOpen className="h-12 w-12 text-gray-600 mb-2" strokeWidth={1} />
+                              <p className="text-gray-400 mb-1">No rentals found</p>
+                              <p className="text-sm text-gray-500">
+                                {searchQuery || statusFilter !== 'all'
+                                  ? 'Try different search criteria or clear filters'
+                                  : 'No rentals available in the system'}
+                              </p>
+                            </div>
                           </td>
                         </tr>
                       ) : (
@@ -712,14 +794,25 @@ const AdminRentalsPage: React.FC = () => {
                     </tbody>
                   </table>
                 </div>
-                {totalPages > 1 && (
-                  <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
-                )}
+                
+                {/* Enhanced Pagination */}
+                <Pagination
+                  currentPage={page}
+                  totalPages={totalPages}
+                  onPageChange={handlePageChange}
+                  onPerPageChange={handlePerPageChange}
+                  totalItems={totalRentals}
+                  perPage={perPage}
+                  itemsPerPageOptions={[5, 10, 20, 50]}
+                  itemLabel="rentals"
+                  colorScheme="blue"
+                />
               </>
             )}
           </motion.div>
         </div>
 
+        {/* View Rental Modal */}
         {viewRental && (
           <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
             <motion.div
@@ -797,6 +890,7 @@ const AdminRentalsPage: React.FC = () => {
           </div>
         )}
 
+        {/* Edit Rental Modal */}
         {editRental && (
           <EditRentalModal
             rental={editRental}

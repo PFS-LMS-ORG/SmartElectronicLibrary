@@ -1,13 +1,15 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { MessageSquareText, Send, X, Loader2, Trash2 } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
 import axios from 'axios';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'react-toastify';
 import { useAuth } from '../../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import BookRecommendations, { BookRecommendation } from './BookRecommendation';
+import ArticleRecommendations, { ArticleRecommendation } from './ArticleRecommendation';
+import { R } from 'node_modules/framer-motion/dist/types.d-DUA-weyD';
 
-// Define a proper type for the role
 type MessageRole = 'user' | 'assistant';
 
 interface Message {
@@ -16,6 +18,8 @@ interface Message {
   role: MessageRole;
   timestamp: Date;
   book_recommendations?: BookRecommendation[];
+  article_recommendations?: ArticleRecommendation[];
+  follow_up_question?: string;
 }
 
 type LanguageOption = 'en' | 'fr' | 'ar';
@@ -34,8 +38,8 @@ const Chatbot: React.FC = () => {
 
   const translations = {
     en: {
-      placeholder: 'Ask me about books...',
-      welcomeMessage: `Hello, ${user?.name || 'User'}! I'm AYO+, your library assistant. I can help you find book recommendations, answer questions about our library, or assist with borrowing books. How can I assist you today?`,
+      placeholder: 'Ask me about books or articles...',
+      welcomeMessage: `Hello, ${user?.name || 'User'}! I'm AYO+, your library assistant. I can help you find book and article recommendations, answer questions about our library, or assist with borrowing books. How can I assist you today?`,
       sending: 'Thinking...',
       send: 'Send',
       authError: 'You need to be logged in to use the chatbot.',
@@ -46,8 +50,8 @@ const Chatbot: React.FC = () => {
       errorClearing: 'Error clearing conversation'
     },
     fr: {
-      placeholder: 'Posez-moi des questions sur les livres...',
-      welcomeMessage: `Bonjour, ${user?.name || 'Utilisateur'} ! Je suis AYO+, votre assistant de bibliothèque. Je peux vous aider à trouver des recommandations de livres, répondre à des questions sur notre bibliothèque ou vous aider à emprunter des livres. Comment puis-je vous aider aujourd'hui ?`,
+      placeholder: 'Posez-moi des questions sur les livres ou articles...',
+      welcomeMessage: `Bonjour, ${user?.name || 'Utilisateur'} ! Je suis AYO+, votre assistant de bibliothèque. Je peux vous aider à trouver des recommandations de livres et d'articles, répondre à des questions sur notre bibliothèque ou vous aider à emprunter des livres. Comment puis-je vous aider aujourd'hui ?`,
       sending: 'En réflexion...',
       send: 'Envoyer',
       authError: 'Vous devez être connecté pour utiliser le chatbot.',
@@ -58,8 +62,8 @@ const Chatbot: React.FC = () => {
       errorClearing: 'Erreur lors de l\'effacement de la conversation'
     },
     ar: {
-      placeholder: 'اسألني عن الكتب...',
-      welcomeMessage: `مرحبًا، ${user?.name || 'مستخدم'}! أنا AYO+، مساعد المكتبة الخاص بك. يمكنني مساعدتك في العثور على توصيات الكتب، والإجابة على الأسئلة حول مكتبتنا، أو المساعدة في استعارة الكتب. كيف يمكنني مساعدتك اليوم؟`,
+      placeholder: 'اسألني عن الكتب أو المقالات...',
+      welcomeMessage: `مرحبًا، ${user?.name || 'مستخدم'}! أنا AYO+، مساعد المكتبة الخاص بك. يمكنني مساعدتك في العثور على توصيات الكتب والمقالات، والإجابة على الأسئلة حول مكتبتنا، أو المساعدة في استعارة الكتب. كيف يمكنني مساعدتك اليوم؟`,
       sending: 'جاري التفكير...',
       send: 'إرسال',
       authError: 'يجب أن تكون مسجل الدخول لاستخدام روبوت المحادثة.',
@@ -70,8 +74,7 @@ const Chatbot: React.FC = () => {
       errorClearing: 'خطأ أثناء مسح المحادثة'
     },
   };
-  
-  // This effect adds welcome message only on first open or after clearing chat
+
   useEffect(() => {
     if (isOpen && isFirstOpen && messages.length === 0) {
       setMessages([
@@ -89,48 +92,50 @@ const Chatbot: React.FC = () => {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
-  
-  // Load chat history only when the chat is opened
+
   useEffect(() => {
     if (!isOpen || hasLoadedHistory) return;
-    
     const fetchHistory = async () => {
       try {
         const token = localStorage.getItem('token');
         const response = await axios.get('/api/chatbot/history', {
           headers: { Authorization: `Bearer ${token}` },
         });
-        
         if (response.data.chat_history && response.data.chat_history.length > 0) {
-          // Process history to include both user and assistant messages
           const processedHistory: Message[] = [];
-          
           response.data.chat_history.forEach((msg: any) => {
-            // Add the user message first
             processedHistory.push({
               id: `user-${msg.id}`,
               content: msg.message,
               role: 'user' as MessageRole,
               timestamp: new Date(msg.created_at),
             });
-            
-            // Then add the assistant response
+            const hasFollowUp = msg.follow_up_question && msg.follow_up_question.length > 0;
+            const mainResponse = hasFollowUp 
+              ? msg.response.replace(msg.follow_up_question, '').trim() 
+              : msg.response;
             processedHistory.push({
               id: msg.id.toString(),
-              content: msg.response,
+              content: mainResponse,
               role: 'assistant' as MessageRole,
               timestamp: new Date(msg.created_at),
               book_recommendations: msg.book_recommendations,
+              article_recommendations: msg.article_recommendations,
+              follow_up_question: msg.follow_up_question
             });
+            if (hasFollowUp) {
+              processedHistory.push({
+                id: `follow-up-${msg.id}`,
+                content: msg.follow_up_question,
+                role: 'assistant' as MessageRole,
+                timestamp: new Date(new Date(msg.created_at).getTime() + 100),
+              });
+            }
           });
-          
-          // Sort by timestamp in ascending order
           processedHistory.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
-          
           setMessages(processedHistory);
-          setIsFirstOpen(false); // We already have history, don't show welcome
+          setIsFirstOpen(false);
         } else if (messages.length === 0) {
-          // If no history and no messages, show welcome message
           setMessages([
             {
               id: 'welcome',
@@ -140,11 +145,9 @@ const Chatbot: React.FC = () => {
             },
           ]);
         }
-        
         setHasLoadedHistory(true);
       } catch (error) {
         console.error('Error fetching chat history:', error);
-        // If error loading history, at least show welcome message
         if (messages.length === 0) {
           setMessages([
             {
@@ -158,7 +161,6 @@ const Chatbot: React.FC = () => {
         setHasLoadedHistory(true);
       }
     };
-    
     fetchHistory();
   }, [isOpen, language, hasLoadedHistory, messages.length]);
 
@@ -167,12 +169,9 @@ const Chatbot: React.FC = () => {
       toast.error(translations[language].authError);
       return;
     }
-    
     if (!isOpen) {
-      // When opening, set hasLoadedHistory to false to trigger reload if needed
       setHasLoadedHistory(false);
     }
-    
     setIsOpen(!isOpen);
   };
 
@@ -182,20 +181,16 @@ const Chatbot: React.FC = () => {
 
   const handleSendMessage = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    
     if (!inputValue.trim() || !isAuthenticated) return;
-    
     const userMessage: Message = {
       id: Date.now().toString(),
       content: inputValue,
       role: 'user',
       timestamp: new Date(),
     };
-    
     setMessages(prevMessages => [...prevMessages, userMessage]);
     setInputValue('');
     setIsLoading(true);
-    
     try {
       const token = localStorage.getItem('token');
       const response = await axios.post(
@@ -203,17 +198,56 @@ const Chatbot: React.FC = () => {
         { message: userMessage.content, language },
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      
+      const mappedBookRecommendations = response.data.recommended_books ? 
+        response.data.recommended_books.map((book: any) => ({
+          id: parseInt(book.id || '0') || 0,
+          title: book.title || '',
+          author: book.author || '',
+          category: book.category || '',
+          rating: book.rating || 0,
+          cover_url: book.cover_url || '',
+          reason: book.reason || ''
+        })) : [];
+      const mappedArticleRecommendations = response.data.recommended_articles ? 
+        response.data.recommended_articles.map((article: any) => ({
+          id: parseInt(article.id || '0') || 0,
+          slug: article.slug || '',
+          title: article.title || '',
+          author: article.author || '',
+          category: article.category || '',
+          summary: article.summary || '',
+          pdf_url: article.pdf_url || '',
+          cover_image_url: article.cover_image_url || '',
+          read_time: article.read_time || 5,
+          views: article.views || 0,
+          likes: article.likes || 0,
+          reason: article.reason || ''
+        })) : [];
       setMessages(prevMessages => [
         ...prevMessages,
         {
           id: Date.now().toString(),
-          content: response.data.response,
+          content: response.data.response.replace(response.data.follow_up_question, '').trim(),
           role: 'assistant',
           timestamp: new Date(),
-          book_recommendations: response.data.book_recommendations,
+          book_recommendations: mappedBookRecommendations,
+          article_recommendations: mappedArticleRecommendations,
+          follow_up_question: response.data.follow_up_question,
         },
       ]);
+      if (response.data.follow_up_question) {
+        setTimeout(() => {
+          setMessages(prevMessages => [
+            ...prevMessages,
+            {
+              id: `follow-up-${Date.now().toString()}`,
+              content: response.data.follow_up_question,
+              role: 'assistant',
+              timestamp: new Date(Date.now() + 500),
+            },
+          ]);
+        }, 1000);
+      }
     } catch (error) {
       console.error('Error sending message to chatbot:', error);
       if (axios.isAxiosError(error) && error.response?.status === 401) {
@@ -237,7 +271,6 @@ const Chatbot: React.FC = () => {
       await axios.post('/api/chatbot/clear', {}, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      
       setMessages([
         {
           id: 'welcome',
@@ -246,10 +279,7 @@ const Chatbot: React.FC = () => {
           timestamp: new Date(),
         },
       ]);
-      
-      // Reset the first open state so welcome message appears after clearing
       setIsFirstOpen(true);
-      
       toast.success(translations[language].conversationCleared);
     } catch (error) {
       console.error('Error clearing conversation:', error);
@@ -263,6 +293,10 @@ const Chatbot: React.FC = () => {
 
   const handleBookClick = (bookId: number) => {
     navigate(`/book/${bookId}`);
+  };
+
+  const handleArticleClick = (slug: string) => {
+    navigate(`/articles/${slug}`);
   };
 
   const chatbotVariants = {
@@ -358,11 +392,15 @@ const Chatbot: React.FC = () => {
 
             <div 
               className={`flex-1 overflow-y-auto p-4 ${language === 'ar' ? 'text-right' : 'text-left'}`}
-              style={{ direction: language === 'ar' ? 'rtl' : 'ltr', maxHeight: '400px' }}
+              style={{ 
+                direction: language === 'ar' ? 'rtl' : 'ltr', 
+                maxHeight: '400px',
+                '--markdown-img-max-width': '100px',
+                '--markdown-img-max-height': '100px',
+              } as React.CSSProperties}
             >
               {messages.map((message) => (
                 <React.Fragment key={message.id}>
-                  {/* Message bubble */}
                   <div
                     className={`mb-4 ${message.role === 'user' ? 'flex flex-row-reverse' : 'flex'}`}
                   >
@@ -373,7 +411,7 @@ const Chatbot: React.FC = () => {
                           : 'bg-gray-800/70 text-gray-200 rounded-tl-none'
                       }`}
                     >
-                      <p>{message.content}</p>
+                      <ReactMarkdown>{message.content}</ReactMarkdown>
                       <div
                         className={`text-xs mt-1 ${
                           message.role === 'user' ? 'text-indigo-200' : 'text-gray-400'
@@ -383,8 +421,6 @@ const Chatbot: React.FC = () => {
                       </div>
                     </div>
                   </div>
-                  
-                  {/* Book recommendations */}
                   {message.role === 'assistant' && message.book_recommendations && message.book_recommendations.length > 0 && (
                     <div className="mb-4 flex">
                       <div className="max-w-[90%] w-full">
@@ -396,10 +432,19 @@ const Chatbot: React.FC = () => {
                       </div>
                     </div>
                   )}
+                  {message.role === 'assistant' && message.article_recommendations && message.article_recommendations.length > 0 && (
+                    <div className="mb-4 flex">
+                      <div className="max-w-[90%] w-full">
+                        <ArticleRecommendations 
+                          recommendations={message.article_recommendations} 
+                          language={language} 
+                          onArticleClick={handleArticleClick} 
+                        />
+                      </div>
+                    </div>
+                  )}
                 </React.Fragment>
               ))}
-              
-              {/* Loading indicator */}
               {isLoading && (
                 <div className="flex mb-4">
                   <div className="bg-gray-800/70 text-gray-200 rounded-xl rounded-tl-none p-3">

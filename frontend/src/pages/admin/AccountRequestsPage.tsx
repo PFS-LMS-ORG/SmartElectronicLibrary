@@ -1,7 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { UserPlus, Eye, Trash2, CheckCircle, XCircle, Clock, Filter, RefreshCw } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
+import { UserPlus, Eye, Trash2, CheckCircle, XCircle, Clock, Filter, RefreshCw, 
+         Search, ChevronDown, X } from 'lucide-react';
 import { toast } from 'react-toastify';
 import Layout from '@/components/layout/layout';
+import axios from 'axios';
+import Pagination from '@/components/common/Pagination';
 
 interface AccountRequest {
   id: number;
@@ -11,84 +15,99 @@ interface AccountRequest {
   created_at: string;
 }
 
+
 const AccountRequestsPage: React.FC = () => {
+  const [searchParams, setSearchParams] = useSearchParams();
+  
   const [requests, setRequests] = useState<AccountRequest[]>([]);
-  const [filteredRequests, setFilteredRequests] = useState<AccountRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
+  const [statusFilter, setStatusFilter] = useState<string>(searchParams.get('status') || 'all');
   const [selectedRequest, setSelectedRequest] = useState<AccountRequest | null>(null);
   const [showModal, setShowModal] = useState(false);
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchTerm, setSearchTerm] = useState<string>(searchParams.get('search') || '');
   const [sortConfig, setSortConfig] = useState<{
     key: keyof AccountRequest | null;
     direction: 'ascending' | 'descending';
   }>({ key: 'created_at', direction: 'descending' });
-
+  
+  // Pagination states
+  const [page, setPage] = useState<number>(parseInt(searchParams.get('page') || '1', 10));
+  const [perPage, setPerPage] = useState<number>(parseInt(searchParams.get('per_page') || '10', 10));
+  const [totalPages, setTotalPages] = useState<number>(1);
+  const [totalRequests, setTotalRequests] = useState<number>(0);
+  
+  // Update URL when parameters change
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (searchTerm) params.set('search', searchTerm);
+    if (page !== 1) params.set('page', page.toString());
+    if (perPage !== 10) params.set('per_page', perPage.toString());
+    if (statusFilter !== 'all') params.set('status', statusFilter);
+    setSearchParams(params);
+  }, [page, perPage, statusFilter, searchTerm, setSearchParams]);
+  
   const fetchRequests = async () => {
     try {
-      setLoading(true);
-      setError(null);
-      const token = localStorage.getItem('token');
-      if (!token) throw new Error('No authentication token found');
+        setLoading(true);
+        setError(null);
+        const token = localStorage.getItem('token');
+        if (!token) throw new Error('No authentication token found');
 
-      const response = await fetch('/api/admin/account-requests', {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+        const params = new URLSearchParams({
+          page: page.toString(),
+          per_page: perPage.toString(),
+          ...(statusFilter !== 'all' && { status: statusFilter }),
+          ...(searchTerm && { search: searchTerm }),
+        });
 
-      if (!response.ok) {
-        throw new Error('Failed to fetch account requests');
-      }
+        const response = await axios.get(`/api/admin/account-requests?${params.toString()}`, {
+            headers: { Authorization: `Bearer ${token}` },
+        });
 
-      const data = await response.json();
-      setRequests(data);
+        // If backend already supports pagination
+        if (response.data.requests && response.data.total_count !== undefined && response.data.total_pages !== undefined) {
+          setRequests(response.data.requests);
+          setTotalRequests(response.data.total_count);
+          setTotalPages(response.data.total_pages);
+        } else {
+          // Fallback to client-side pagination if backend doesn't support it yet
+          const allRequests = response.data;
+          setRequests(allRequests);
+          setTotalRequests(allRequests.length);
+          setTotalPages(Math.ceil(allRequests.length / perPage));
+        }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to fetch account requests');
+        setError(err instanceof Error ? err.message : 'Failed to fetch account requests');
+        setRequests([]);
+        setTotalRequests(0);
+        setTotalPages(1);
     } finally {
-      setLoading(false);
+        setLoading(false);
     }
   };
 
   // Initial fetch
   useEffect(() => {
     fetchRequests();
-  }, []);
+  }, [page, perPage, statusFilter, searchTerm]);
 
-  // Apply filters, search, and sort
-  useEffect(() => {
-    let result = [...requests];
+  const handleSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    setPage(1); // Reset to first page on new search
+    fetchRequests();
+  };
 
-    // Apply status filter
-    if (statusFilter !== 'all') {
-      result = result.filter((req) => req.status === statusFilter);
-    }
+  const handleStatusFilterChange = (status: string) => {
+    setStatusFilter(status);
+    setPage(1); // Reset to first page when filter changes
+  };
 
-    // Apply search
-    if (searchTerm) {
-      const term = searchTerm.toLowerCase();
-      result = result.filter(
-        (req) =>
-          req.name.toLowerCase().includes(term) ||
-          req.email.toLowerCase().includes(term) ||
-          req.id.toString().includes(term)
-      );
-    }
-
-    // Apply sorting
-    if (sortConfig.key) {
-      result.sort((a, b) => {
-        if (a[sortConfig.key!] < b[sortConfig.key!]) {
-          return sortConfig.direction === 'ascending' ? -1 : 1;
-        }
-        if (a[sortConfig.key!] > b[sortConfig.key!]) {
-          return sortConfig.direction === 'ascending' ? 1 : -1;
-        }
-        return 0;
-      });
-    }
-
-    setFilteredRequests(result);
-  }, [requests, statusFilter, searchTerm, sortConfig]);
+  const handlePerPageChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const newPerPage = parseInt(e.target.value, 10);
+    setPerPage(newPerPage);
+    setPage(1); // Reset to first page when items per page changes
+  };
 
   const requestSort = (key: keyof AccountRequest) => {
     let direction: 'ascending' | 'descending' = 'ascending';
@@ -103,9 +122,10 @@ const AccountRequestsPage: React.FC = () => {
     return sortConfig.direction === 'ascending' ? '↑' : '↓';
   };
 
-  const resetFilters = () => {
+  const clearFilters = () => {
     setStatusFilter('all');
     setSearchTerm('');
+    setPage(1);
     setSortConfig({ key: 'created_at', direction: 'descending' });
   };
 
@@ -117,107 +137,83 @@ const AccountRequestsPage: React.FC = () => {
   const handleDelete = async (id: number) => {
     if (!window.confirm('Are you sure you want to delete this request?')) return;
     try {
-      const token = localStorage.getItem('token');
-      if (!token) throw new Error('No authentication token found');
+        const token = localStorage.getItem('token');
+        if (!token) throw new Error('No authentication token found');
 
-      const response = await fetch(`/api/admin/account-requests/${id}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` },
-      });
+        await axios.delete(`/api/admin/account-requests/${id}`, {
+            headers: { Authorization: `Bearer ${token}` },
+        });
 
-      if (!response.ok) {
-        throw new Error('Failed to delete account request');
-      }
-
-      setRequests(requests.filter((req) => req.id !== id));
-      toast.success('Request deleted successfully');
+        setRequests(requests.filter((req) => req.id !== id));
+        toast.success('Request deleted successfully. Email notification sent.');
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to delete request');
+        toast.error(err instanceof Error ? err.message : 'Failed to delete request. Email not sent.');
     }
   };
 
   const handleApprove = async (id: number) => {
     try {
-      const token = localStorage.getItem('token');
-      if (!token) throw new Error('No authentication token found');
+        const token = localStorage.getItem('token');
+        if (!token) throw new Error('No authentication token found');
 
-      const response = await fetch(`/api/admin/account-requests/${id}/approve`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-      });
+        await axios.post(`/api/admin/account-requests/${id}/approve`, {}, {
+            headers: { Authorization: `Bearer ${token}` },
+        });
 
-      if (!response.ok) {
-        throw new Error('Failed to approve account request');
-      }
-
-      // Update the request status in the state
-      setRequests(
-        requests.map((req) =>
-          req.id === id ? { ...req, status: 'approved' as const } : req
-        )
-      );
-      
-      toast.success('Account request approved successfully');
-      setShowModal(false);
+        setRequests(
+            requests.map((req) =>
+                req.id === id ? { ...req, status: 'approved' as const } : req
+            )
+        );
+        
+        toast.success('Account request approved successfully. Email notification sent.');
+        setShowModal(false);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to approve request');
+        toast.error(err instanceof Error ? err.message : 'Failed to approve request. Email not sent.');
     }
   };
 
   const handleReject = async (id: number) => {
     try {
-      const token = localStorage.getItem('token');
-      if (!token) throw new Error('No authentication token found');
+        const token = localStorage.getItem('token');
+        if (!token) throw new Error('No authentication token found');
 
-      const response = await fetch(`/api/admin/account-requests/${id}/reject`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-      });
+        await axios.post(`/api/admin/account-requests/${id}/reject`, {}, {
+            headers: { Authorization: `Bearer ${token}` },
+        });
 
-      if (!response.ok) {
-        throw new Error('Failed to reject account request');
-      }
-
-      // Update the request status in the state
-      setRequests(
-        requests.map((req) =>
-          req.id === id ? { ...req, status: 'rejected' as const } : req
-        )
-      );
-      
-      toast.success('Account request rejected successfully');
-      setShowModal(false);
+        setRequests(
+            requests.map((req) =>
+                req.id === id ? { ...req, status: 'rejected' as const } : req
+            )
+        );
+        
+        toast.success('Account request rejected successfully. Email notification sent.');
+        setShowModal(false);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to reject request');
+        toast.error(err instanceof Error ? err.message : 'Failed to reject request. Email not sent.');
     }
   };
 
   const handleSetPending = async (id: number) => {
     try {
-      const token = localStorage.getItem('token');
-      if (!token) throw new Error('No authentication token found');
+        const token = localStorage.getItem('token');
+        if (!token) throw new Error('No authentication token found');
 
-      // Note: You would need to add this endpoint to your backend
-      const response = await fetch(`/api/admin/account-requests/${id}/set-pending`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-      });
+        await axios.post(`/api/admin/account-requests/${id}/set-pending`, {}, {
+            headers: { Authorization: `Bearer ${token}` },
+        });
 
-      if (!response.ok) {
-        throw new Error('Failed to update account request status');
-      }
-
-      // Update the request status in the state
-      setRequests(
-        requests.map((req) =>
-          req.id === id ? { ...req, status: 'pending' as const } : req
-        )
-      );
-      
-      toast.success('Account request status updated to pending');
-      setShowModal(false);
+        setRequests(
+            requests.map((req) =>
+                req.id === id ? { ...req, status: 'pending' as const } : req
+            )
+        );
+        
+        toast.success('Account request status updated to pending. Email notification sent.');
+        setShowModal(false);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to update request status');
+        toast.error(err instanceof Error ? err.message : 'Failed to update request status. Email not sent.');
     }
   };
 
@@ -230,6 +226,19 @@ const AccountRequestsPage: React.FC = () => {
       hour: '2-digit',
       minute: '2-digit',
     }).format(date);
+  };
+
+  
+  const handlePageChange = (newPage: number) => {
+    // Ensure page number is within valid range
+    const page = Math.max(1, Math.min(newPage, totalPages));
+    setPage(page);
+  };
+
+  // Get displayed requests based on client-side filtering, sorting & pagination
+  const getDisplayedRequests = () => {
+    // If backend already handles filtering, sorting & pagination, just return the requests
+    return requests;
   };
 
   if (loading) return (
@@ -258,6 +267,8 @@ const AccountRequestsPage: React.FC = () => {
     </Layout>
   );
 
+  const displayedRequests = getDisplayedRequests();
+
   return (
     <Layout>
       <div className="container mx-auto px-4 py-8">
@@ -277,7 +288,7 @@ const AccountRequestsPage: React.FC = () => {
                   <RefreshCw className="h-4 w-4 mr-1" /> Refresh
                 </button>
                 <button 
-                  onClick={resetFilters}
+                  onClick={clearFilters}
                   className="px-3 py-1 bg-gray-600 hover:bg-gray-500 text-white rounded-md flex items-center text-sm"
                 >
                   <Filter className="h-4 w-4 mr-1" /> Reset Filters
@@ -286,37 +297,96 @@ const AccountRequestsPage: React.FC = () => {
             </div>
           </div>
 
-          {/* Filters */}
+          {/* Search and Filter Area */}
           <div className="px-6 py-4 bg-gray-750 border-b border-gray-600">
-            <div className="flex flex-col md:flex-row md:items-center space-y-2 md:space-y-0 md:space-x-4">
-              <div className="flex-grow">
-                <input
-                  type="text"
-                  placeholder="Search by name, email or ID..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
-                />
+            <div className="flex flex-col md:flex-row md:items-center gap-4">
+              {/* Search Form */}
+              <div className="md:flex-grow">
+                <form onSubmit={handleSearch} className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <Search size={16} className="text-gray-400" />
+                  </div>
+                  <input
+                    type="text"
+                    className="w-full pl-10 pr-4 py-2 border border-gray-600 rounded-lg bg-gray-700 text-gray-100 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+                    placeholder="Search by name, email or ID..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                  />
+                  <button
+                    type="submit"
+                    className="absolute right-2 top-1/2 transform -translate-y-1/2 p-1.5 rounded-md bg-amber-600 text-amber-100 hover:bg-amber-700 transition-colors"
+                  >
+                    <Search size={16} />
+                  </button>
+                </form>
               </div>
-              <div className="flex items-center space-x-2">
-                <label className="text-gray-300 whitespace-nowrap">Status:</label>
+
+              {/* Status Filter */}
+              <div className="relative w-full md:w-64">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <Filter size={16} className="text-gray-400" />
+                </div>
                 <select
                   value={statusFilter}
-                  onChange={(e) => setStatusFilter(e.target.value as any)}
-                  className="px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                  onChange={(e) => handleStatusFilterChange(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2 border border-gray-600 rounded-lg bg-gray-700 text-gray-100 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 appearance-none"
+                  style={{ backgroundImage: "none" }} // Remove default arrow
                 >
-                  <option value="all">All</option>
+                  <option value="all">All Statuses</option>
                   <option value="pending">Pending</option>
                   <option value="approved">Approved</option>
                   <option value="rejected">Rejected</option>
                 </select>
+                <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                  <ChevronDown size={16} className="text-gray-400" />
+                </div>
               </div>
             </div>
+            
+            {/* Active filters display */}
+            {(searchTerm || statusFilter !== 'all') && (
+              <div className="flex items-center flex-wrap gap-2 mt-3">
+                <span className="text-xs text-gray-400">Active filters:</span>
+                {searchTerm && (
+                  <span className="inline-flex items-center px-2 py-1 bg-amber-900/30 text-amber-300 text-xs rounded border border-amber-700">
+                    Search: {searchTerm}
+                    <button 
+                      onClick={() => { setSearchTerm(''); setPage(1); }}
+                      className="ml-1.5 hover:text-white"
+                    >
+                      <X size={12} />
+                    </button>
+                  </span>
+                )}
+                {statusFilter !== 'all' && (
+                  <span className={`inline-flex items-center px-2 py-1 text-xs rounded border ${
+                    statusFilter === 'pending' ? 'bg-yellow-900/30 text-yellow-300 border-yellow-700' :
+                    statusFilter === 'approved' ? 'bg-green-900/30 text-green-300 border-green-700' :
+                    'bg-red-900/30 text-red-300 border-red-700'
+                  }`}>
+                    Status: {statusFilter.charAt(0).toUpperCase() + statusFilter.slice(1)}
+                    <button 
+                      onClick={() => { setStatusFilter('all'); setPage(1); }}
+                      className="ml-1.5 hover:text-white"
+                    >
+                      <X size={12} />
+                    </button>
+                  </span>
+                )}
+                <button
+                  onClick={clearFilters}
+                  className="text-xs text-gray-400 hover:text-gray-300 ml-2"
+                >
+                  Clear all
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Content */}
           <div className="px-6 py-4">
-            {filteredRequests.length === 0 ? (
+            {displayedRequests.length === 0 ? (
               <div className="bg-gray-700/50 rounded-lg p-8 text-center">
                 <p className="text-gray-400 mb-2">No account requests found</p>
                 <p className="text-gray-500 text-sm">
@@ -362,7 +432,7 @@ const AccountRequestsPage: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-600">
-                    {filteredRequests.map((request) => (
+                    {displayedRequests.map((request) => (
                       <tr key={request.id} className="hover:bg-gray-700/70">
                         <td className="px-4 py-3 text-white">{request.id}</td>
                         <td className="px-4 py-3 text-white">{request.name}</td>
@@ -406,7 +476,18 @@ const AccountRequestsPage: React.FC = () => {
             )}
           </div>
 
-          {/* Pagination would go here */}
+          {/* Enhanced Pagination */}
+          <Pagination
+            currentPage={page}
+            totalPages={totalPages}
+            onPageChange={handlePageChange}
+            onPerPageChange={handlePerPageChange}
+            perPage={perPage}
+            totalItems={totalRequests}
+            colorScheme="amber"
+            itemsPerPageOptions={[5, 10, 20, 50]}
+            itemLabel="account requests"
+          />
         </div>
       </div>
 
@@ -420,7 +501,7 @@ const AccountRequestsPage: React.FC = () => {
                 onClick={() => setShowModal(false)}
                 className="text-gray-400 hover:text-white"
               >
-                ×
+                <X size={18} />
               </button>
             </div>
             <div className="p-6">

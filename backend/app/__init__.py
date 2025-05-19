@@ -1,5 +1,6 @@
 from flask import Flask
 from flask_bcrypt import Bcrypt
+from flask_cors import CORS
 from flask_jwt_extended import JWTManager
 from app.db import db
 from flask_migrate import Migrate
@@ -10,9 +11,13 @@ from app.controllers.user_controller import user_controller
 from app.controllers.rental_controller import rental_controller
 from app.controllers.account_requests_controller import account_requests_bp
 from app.controllers.chatbot_controller import chatbot_controller
+from app.controllers.article_controller import article_controller
+from app.controllers.email_controller import email_controller
+from app.controllers.notification_controller import notification_controller
 from dotenv import load_dotenv
 import os
 import logging
+
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
@@ -33,6 +38,10 @@ def create_app():
     JWTManager(app)
     Migrate(app, db)
 
+
+    # Enable CORS for all routes
+    CORS(app, resources={r"/*": {"origins": "http://localhost:5173"}})  
+    
     logger.debug("Registering blueprints")
     app.register_blueprint(book_controller)
     app.register_blueprint(rental_request_controller)
@@ -41,6 +50,9 @@ def create_app():
     app.register_blueprint(auth_bp, url_prefix='/auth')
     app.register_blueprint(account_requests_bp, url_prefix='/admin')
     app.register_blueprint(chatbot_controller, url_prefix='/chatbot')
+    app.register_blueprint(article_controller)
+    app.register_blueprint(email_controller, url_prefix='/email')
+    app.register_blueprint(notification_controller)
 
     logger.debug("App creation complete")
     return app
